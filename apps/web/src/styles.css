@@ -1,0 +1,77 @@
+:root {
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  line-height: 1.55;
+  color: #182332;
+  background: #f3f6fa;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+button, input { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: default; opacity: .55; }
+:focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; }
+
+.layout { min-height: 100vh; display: grid; grid-template-columns: 228px minmax(0, 1fr); }
+.sidebar { padding: 28px 16px; background: #152235; color: #fff; }
+.brand { display: flex; align-items: center; gap: 12px; padding: 0 8px; margin-bottom: 38px; }
+.brand-mark {
+  display: grid; place-items: center; width: 42px; height: 42px;
+  background: #a9e4df; color: #102f33; border-radius: 12px; font-size: 22px; font-weight: 750;
+}
+.brand strong, .brand small { display: block; }
+.brand small { color: #b5c1cf; font-size: 12px; }
+nav { display: grid; gap: 6px; }
+nav button {
+  display: flex; gap: 12px; align-items: center; padding: 10px 12px; text-align: left;
+  border: 0; border-radius: 8px; color: #dce7f6; background: transparent;
+}
+nav button span { color: #adbed0; font-size: 12px; font-variant-numeric: tabular-nums; }
+nav button:hover, nav button[aria-current="page"] { background: #294361; color: #fff; }
+
+main { max-width: 1320px; width: 100%; margin: 0 auto; padding: 26px clamp(20px, 4vw, 56px) 56px; }
+.topbar, .job-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.topbar { font-size: 14px; color: #485a71; padding-bottom: 16px; border-bottom: 1px solid #dce3ed; }
+.topbar > span:first-child { overflow-wrap: anywhere; }
+.page-header { padding: 28px 0 20px; }
+h1, h2, p { margin: 0; }
+h1 { font-size: clamp(28px, 4vw, 36px); letter-spacing: -.04em; }
+h2 { font-size: 19px; }
+.page-header p, .muted { color: #52637a; margin-top: 6px; }
+.columns { display: grid; gap: 18px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.stack { display: grid; gap: 18px; }
+.card { min-width: 0; padding: 22px; border: 1px solid #dde5ee; border-radius: 14px; background: #fff; }
+.scan-header { display: flex; align-items: start; justify-content: space-between; flex-wrap: wrap; gap: 14px; }
+.scan-header > div { flex: 1 1 340px; }
+form { display: grid; gap: 8px; margin-top: 18px; }
+label { font-size: 14px; font-weight: 650; }
+input { width: 100%; padding: 9px 10px; border: 1px solid #aebcd0; border-radius: 8px; margin-bottom: 6px; color: inherit; }
+.primary, .secondary { width: fit-content; padding: 8px 14px; border: 1px solid transparent; border-radius: 8px; font-weight: 650; }
+.primary { background: #126762; color: #fff; }
+.primary:not(:disabled):hover { background: #0c4f4c; }
+.secondary { background: #fff; color: #253953; border-color: #bac9dc; margin-top: 12px; }
+.error { color: #9f252a; }
+.notice { padding: 14px; background: #fff5f5; border-radius: 8px; margin-bottom: 12px; }
+.item-list { margin: 14px 0 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.project-item, .job-item { width: 100%; padding: 12px; background: #f8fafc; border: 1px solid #dce3ed; border-radius: 8px; text-align: left; }
+.project-item[aria-pressed="true"] { background: #e7f5f3; border-color: #4a968e; }
+.project-item strong, .project-item span { display: block; overflow-wrap: anywhere; }
+.project-item span, time { color: #52637a; font-size: 13px; }
+.status { display: inline-block; padding: 3px 9px; border-radius: 999px; background: #e9eef5; color: #324963; font-size: 12px; white-space: nowrap; }
+.status.succeeded { background: #e0f4ec; color: #115e43; }
+.status.failed { background: #fbe7e8; color: #8e292f; }
+.status.running { background: #e4edff; color: #214e9b; }
+.card > .status + h2, .job-item p { margin-top: 8px; }
+
+@media (max-width: 850px) {
+  .columns { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 650px) {
+  .layout { grid-template-columns: 1fr; }
+  .sidebar { padding: 14px; }
+  .brand { margin-bottom: 12px; }
+  nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .card { padding: 16px; }
+}

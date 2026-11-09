@@ -1,0 +1,20 @@
+{
+  "name": "archguard",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "engines": { "node": ">=22.16.0" },
+  "scripts": {
+    "dev": "concurrently --kill-others --names api,worker,web \"npm run dev -w @archguard/api\" \"npm run dev:worker -w @archguard/api\" \"npm run dev -w @archguard/web\"",
+    "build": "npm run build --workspaces --if-present",
+    "check": "npm run check --workspaces --if-present"
+  },
+  "overrides": {
+    "rollup": "$rollup"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "rollup": "npm:@rollup/wasm-node@4.68.0",
+    "typescript": "~5.9.3"
+  }
+}
