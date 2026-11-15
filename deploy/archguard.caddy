@@ -6,18 +6,6 @@ route @archguard {
 	@archguard_backend path /ArchGuard/backend /ArchGuard/backend/*
 	handle @archguard_backend {
 		route {
-			# Let the public frontend detect missing credentials without a browser prompt.
-			@archguard_anonymous {
-				header !Authorization
-				not path /ArchGuard/backend/login
-			}
-			respond @archguard_anonymous 401
-
-			basic_auth {
-				archguard REPLACE_WITH_CADDY_PASSWORD_HASH
-			}
-			redir /ArchGuard/backend/login /ArchGuard/ 303
-
 			uri strip_prefix /ArchGuard/backend
 			rewrite * /api{path}
 			reverse_proxy 127.0.0.1:3101 {

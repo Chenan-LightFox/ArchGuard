@@ -8,10 +8,9 @@ const siteBase = import.meta.env.BASE_URL.replace(/\/+$/, '')
 const apiBase = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '') ||
   (siteBase ? `${siteBase}/backend` : '/api')
 
-export const apiLoginUrl = `${apiBase}/login`
 const healthPath = '/health'
 
-export class ApiResponseError extends Error {
+class ApiResponseError extends Error {
   constructor(readonly status: number, message: string) {
     super(message)
   }
