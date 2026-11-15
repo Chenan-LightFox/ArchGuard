@@ -3,6 +3,7 @@ import type { Project, RepositoryScan, RepositoryScanResult } from '@archguard/c
 import { api } from '../api'
 import { PreflightPanel } from './ScansPage'
 import { ArchitectureResults } from './ArchitectureResults'
+import { DependencyDiagram } from '../components/DependencyDiagram'
 import type { ArchitectureRules } from '@archguard/contracts'
 
 const rulesExample = JSON.stringify({
@@ -50,6 +51,7 @@ function ResultPanel({ result }: { result: RepositoryScanResult }) {
           setPage(0)
         }} />
       </div>
+      <DependencyDiagram edges={visible} label={pageCount > 1 ? '当前页内部依赖图' : '内部依赖图'} />
       {visible.length === 0 ? <p className="muted">没有匹配的内部依赖。</p> : (
         <div className="scan-table">
           <table>

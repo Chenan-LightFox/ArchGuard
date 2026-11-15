@@ -1,6 +1,24 @@
 import { useEffect, useState } from 'react'
 import type { ArchitectureComparison, ArchitectureIssue, ArchitectureReport, RepositoryScan } from '@archguard/contracts'
 import { api } from '../api'
+import { DependencyDiagram } from '../components/DependencyDiagram'
+
+function IssueEvidence({ issue }: { issue: ArchitectureIssue }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <details className="scan-details" onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary>依赖图与证据（{issue.evidence.length}）</summary>
+      {open && <DependencyDiagram
+        edges={issue.evidence}
+        label={issue.rule === 'cycle' ? '循环依赖图' : '分层违规依赖图'}
+        issue
+      />}
+      <ul className="scan-paths">{issue.evidence.map((edge, index) => (
+        <li key={index}><code>{edge.from}:{edge.line} → {edge.to}</code></li>
+      ))}</ul>
+    </details>
+  )
+}
 
 function Issues({ items }: { items: ArchitectureIssue[] }) {
   const [page, setPage] = useState(0)
@@ -15,12 +33,7 @@ function Issues({ items }: { items: ArchitectureIssue[] }) {
           <li className="job-item" key={issue.id}>
             <strong>{issue.rule === 'cycle' ? '循环依赖' : `分层违规 · ${issue.layers?.from} → ${issue.layers?.to}`}</strong>
             <p className="break-code"><code>{issue.path.join(' → ')}</code></p>
-            <details className="scan-details">
-              <summary>依赖证据（{issue.evidence.length}）</summary>
-              <ul className="scan-paths">{issue.evidence.map((edge, index) => (
-                <li key={index}><code>{edge.from}:{edge.line} → {edge.to}</code></li>
-              ))}</ul>
-            </details>
+            <IssueEvidence issue={issue} />
           </li>
         ))}
       </ul>

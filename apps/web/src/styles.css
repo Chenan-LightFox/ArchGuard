@@ -145,7 +145,7 @@ fieldset { display: grid; gap: 10px; min-width: 0; margin: 0; padding: 0; border
 .error { color: var(--error); }
 .notice { margin-bottom: 16px; padding: 14px; border-left: 3px solid var(--border-accent); background: #301d1b; }
 
-.item-list { display: grid; margin: 16px 0 0; padding: 0; list-style: none; }
+.item-list { display: grid; grid-template-columns: minmax(0, 1fr); margin: 16px 0 0; padding: 0; list-style: none; }
 .item-list:empty { display: none; }
 .project-item, .job-item { width: 100%; padding: 14px 12px; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--ink); text-align: left; }
 .project-item[aria-pressed="true"] { box-shadow: inset 4px 0 var(--signal); background: #443432; }
@@ -170,6 +170,17 @@ fieldset { display: grid; gap: 10px; min-width: 0; margin: 0; padding: 0; border
 .metrics strong { display: block; color: var(--ink); font-size: clamp(16px, 2.5vw, 26px); overflow-wrap: anywhere; }
 .plan-preview { min-width: 0; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
 .scan-filter { margin-top: 16px; max-width: 480px; }
+.dependency-diagram { min-width: 0; margin: 16px 0 12px; }
+.dependency-diagram figcaption { margin-bottom: 8px; font-weight: 650; }
+.diagram-viewport {
+  max-width: 100%;
+  max-height: 460px;
+  overflow: auto;
+  padding: 16px;
+  border: 2px solid var(--line);
+  background: var(--canvas);
+}
+.diagram-viewport img { display: block; max-width: none; }
 .scan-table { max-width: 100%; overflow-x: auto; margin-top: 12px; }
 .scan-table table { width: 100%; border-collapse: collapse; }
 .scan-table th, .scan-table td { padding: 11px 9px; border-bottom: 1px solid var(--line); text-align: left; overflow-wrap: anywhere; }
