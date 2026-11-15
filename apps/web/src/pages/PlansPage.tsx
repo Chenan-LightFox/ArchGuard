@@ -22,7 +22,6 @@ function PlanSummary({ plan }: { plan: PlanDraft }) {
         <span>人工成本 <strong>{number.format(plan.metrics.cost)} 元</strong></span>
       </div>
       <p>一条关键路径 <code>{plan.metrics.criticalPath.join(' → ')}</code></p>
-      <p className="muted">排程从第 0 个工作日起算。空白工期按每天 8 人时折算，任务可并行。</p>
       <div className="scan-table">
         <table>
           <thead><tr><th>任务</th><th>需求</th><th>前置</th><th>工时</th><th>开始 → 完成</th><th>关联代码</th></tr></thead>
@@ -132,7 +131,6 @@ export function PlansPage({ project }: { project: Project }) {
     <div className="stack">
       <section className="card">
         <h2>导入计划基线</h2>
-        <p className="muted">上传 UTF-8 文件或粘贴内容。需求使用「## REQ-01 标题」分段，任务表的多值字段用竖线分隔。</p>
         <button type="button" className="secondary" disabled={busy} onClick={() => update(example)}>填入示例</button>
         <form onSubmit={(event) => void submit(event)}>
           <fieldset disabled={busy}>
@@ -162,7 +160,7 @@ export function PlansPage({ project }: { project: Project }) {
       <section className="card">
         <h2>计划版本</h2>
         {historyError && <p className="error" role="alert">{historyError}</p>}
-        {!history.length ? <p className="muted">发布后可以查看计划版本。</p> : (
+        {!history.length ? <p className="muted">暂无计划版本</p> : (
           <>
             <label htmlFor="plan-version">选择版本</label>
             <select id="plan-version" value={version ?? ''} onChange={(event) => {

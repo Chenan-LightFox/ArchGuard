@@ -1,7 +1,27 @@
 import assert from 'node:assert/strict'
+import { mkdirSync, mkdtempSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
+import { resolveGitExecutable } from '../src/scans/git-executable'
 import { analyzeSources } from '../src/scans/analyze-sources'
 import { normalizeGitRef, validateRepositoryUrl } from '../src/scans/git-snapshot'
+
+test('finds Git for Windows when PATH points to its installation directory', { skip: process.platform !== 'win32' }, (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'archguard-git-path-'))
+  const cmd = join(directory, 'cmd')
+  const executable = join(cmd, 'git.exe')
+  mkdirSync(cmd)
+  writeFileSync(executable, '')
+  t.after(() => {
+    unlinkSync(executable)
+    rmdirSync(cmd)
+    rmdirSync(directory)
+  })
+  assert.equal(resolveGitExecutable({ Path: directory }), executable)
+  assert.equal(resolveGitExecutable({ ARCHGUARD_GIT_PATH: executable }), executable)
+  assert.throws(() => resolveGitExecutable({ ARCHGUARD_GIT_PATH: 'cmd/git.exe' }), /绝对路径/)
+})
 
 test('extracts internal dependencies with source locations and classifies missing imports', () => {
   const result = analyzeSources(new Map([

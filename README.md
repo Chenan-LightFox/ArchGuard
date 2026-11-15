@@ -25,6 +25,8 @@ npm run dev
 
 数据默认保存到 `data/archguard.sqlite`。可通过 `ARCHGUARD_DATA_DIR` 指定其他数据目录，通过 `ARCHGUARD_API_PORT` 调整 API 端口（默认 3001）。开发服务仅监听本机。
 
+在 Windows 上，PATH 应包含 `git.exe` 所在目录，例如 `D:\Git\cmd`。修改 PATH 后，从新终端重启 ArchGuard。也可以在启动前用 `ARCHGUARD_GIT_PATH` 指定可执行文件的绝对路径。
+
 ## 代码结构
 
 | 目录 | 职责 |

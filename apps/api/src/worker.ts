@@ -4,6 +4,7 @@ import { promisify } from 'node:util'
 import { version as typescriptVersion } from 'typescript'
 import { SqliteStore } from './storage/sqlite-store'
 import { scanRepository } from './scans/git-snapshot'
+import { gitStartupError, resolveGitExecutable } from './scans/git-executable'
 import { detectArchitecture } from './architecture/rules'
 
 const runFile = promisify(execFile)
@@ -37,12 +38,15 @@ async function runWorker(): Promise<void> {
         continue
       }
 
-      const git = await runFile('git', ['--version'], { timeout: 5_000, windowsHide: true }).catch(() => null)
-      if (git) {
-        store.finishPreflight(job.id, { git: git.stdout.trim(), typescript: typescriptVersion }, null)
-      } else {
-        store.finishPreflight(job.id, null, 'Git 不可用或版本检查超时，请确认已安装 Git 并加入 PATH。')
+      let version: string
+      try {
+        const { stdout } = await runFile(resolveGitExecutable(), ['--version'], { timeout: 5_000, windowsHide: true })
+        version = stdout.trim()
+      } catch (error) {
+        store.finishPreflight(job.id, null, gitStartupError(error))
+        continue
       }
+      store.finishPreflight(job.id, { git: version, typescript: typescriptVersion }, null)
     }
   } finally {
     store.onModuleDestroy()

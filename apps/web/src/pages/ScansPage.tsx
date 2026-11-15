@@ -60,10 +60,7 @@ export function PreflightPanel({ project }: { project: Project }) {
   return (
     <div className="stack">
       <section className="card scan-header">
-        <div>
-          <h2>扫描环境检查</h2>
-          <p className="muted">检查后台进程、Git 和 TypeScript 版本。</p>
-        </div>
+        <h2>扫描环境检查</h2>
         <button className="primary" onClick={() => void startCheck()} disabled={submitting || jobs === null || Boolean(pollError)}>
           {submitting ? '提交中…' : '运行检查'}
         </button>

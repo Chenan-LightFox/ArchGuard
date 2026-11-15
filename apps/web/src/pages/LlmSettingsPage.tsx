@@ -55,7 +55,6 @@ export function LlmSettingsPage() {
   return (
     <section className="card">
       <h2>模型连接配置</h2>
-      <p className="muted">配置仅在当前本地后端进程中有效。模型调用将在接入供应商适配器后启用。</p>
       <form onSubmit={(event) => void save(event)}>
         <fieldset disabled={busy || (!status && !error)}>
           <label htmlFor="llm-key">LLM API Key</label>

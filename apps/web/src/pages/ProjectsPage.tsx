@@ -36,7 +36,6 @@ export function ProjectsPage({ projects, selectedId, ready, onSelect, onCreate }
     <div className="columns">
       <section className="card">
         <h2>登记项目</h2>
-        <p className="muted">填写项目名称和 HTTPS Git 地址，将仓库登记到本地工作区。</p>
         <form onSubmit={createProject}>
           <label htmlFor="project-name">项目名称</label>
           <input
@@ -44,7 +43,6 @@ export function ProjectsPage({ projects, selectedId, ready, onSelect, onCreate }
             value={name}
             onChange={(event) => setName(event.target.value)}
             maxLength={100}
-            placeholder="例如：课程演示项目"
             required
           />
           <label htmlFor="repository-url">Git 仓库地址</label>
@@ -54,7 +52,6 @@ export function ProjectsPage({ projects, selectedId, ready, onSelect, onCreate }
             value={repositoryUrl}
             onChange={(event) => setRepositoryUrl(event.target.value)}
             maxLength={2048}
-            placeholder="https://github.com/org/repo"
             required
           />
           <button className="primary" disabled={saving || !ready}>
@@ -65,7 +62,7 @@ export function ProjectsPage({ projects, selectedId, ready, onSelect, onCreate }
       </section>
       <section className="card">
         <h2>已登记项目</h2>
-        {ready && projects.length === 0 && <p className="muted">创建一个项目后，可以提交仓库扫描。</p>}
+        {ready && projects.length === 0 && <p className="muted">暂无项目</p>}
         {!ready && <p className="muted">等待项目列表。</p>}
         <ul className="item-list">
           {projects.map((project) => (

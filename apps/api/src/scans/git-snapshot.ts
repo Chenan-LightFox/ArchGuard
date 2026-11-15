@@ -6,6 +6,7 @@ import { promisify } from 'node:util'
 import ts from 'typescript'
 import type { RepositoryScanResult } from '@archguard/contracts'
 import { analyzeSources, isSourcePath } from './analyze-sources'
+import { gitStartupError, resolveGitExecutable } from './git-executable'
 
 const gitExec = promisify(execFile)
 const maxSourceBytes = 16 * 1024 * 1024
@@ -36,7 +37,7 @@ export function normalizeGitRef(value: unknown): string {
   return ref.startsWith('refs/') ? ref : 'refs/heads/' + ref
 }
 
-async function git(directory: string, args: string[], timeout = 10_000, maxBuffer = 8 * 1024 * 1024, input?: string) {
+async function git(executable: string, directory: string, args: string[], timeout = 10_000, maxBuffer = 8 * 1024 * 1024, input?: string) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^git_/i.test(key)))
   Object.assign(env, {
     GIT_CONFIG_NOSYSTEM: '1',
@@ -44,7 +45,7 @@ async function git(directory: string, args: string[], timeout = 10_000, maxBuffe
     GIT_TERMINAL_PROMPT: '0',
     GIT_ALLOW_PROTOCOL: 'https',
   })
-  const command = gitExec('git', [
+  const command = gitExec(executable, [
     '-c', 'http.followRedirects=false',
     '-c', 'credential.helper=',
     '-c', 'core.hooksPath=' + (process.platform === 'win32' ? 'NUL' : '/dev/null'),
@@ -96,7 +97,7 @@ function selectBlobs(tree: Buffer) {
   return { blobs, skipped }
 }
 
-async function readBlobs(directory: string, blobs: BlobEntry[]): Promise<Map<string, string>> {
+async function readBlobs(executable: string, directory: string, blobs: BlobEntry[]): Promise<Map<string, string>> {
   const contents = new Map<string, string>()
   // Group by object ID and send only hashes over the batch protocol.
   const entries = new Map<string, BlobEntry[]>()
@@ -109,7 +110,7 @@ async function readBlobs(directory: string, blobs: BlobEntry[]): Promise<Map<str
   const chunks: string[][] = []
   for (let offset = 0; offset < objectIds.length; offset += 100) chunks.push(objectIds.slice(offset, offset + 100))
   for (const chunk of chunks) {
-    const output = await git(directory, ['cat-file', '--batch'], 3000, maxSourceBytes + 1024 * 1024, chunk.join('\n') + '\n')
+    const output = await git(executable, directory, ['cat-file', '--batch'], 3000, maxSourceBytes + 1024 * 1024, chunk.join('\n') + '\n')
     let cursor = 0
     for (const id of chunk) {
       const group = entries.get(id)!
@@ -130,19 +131,29 @@ async function readBlobs(directory: string, blobs: BlobEntry[]): Promise<Map<str
 export async function scanRepository(repositoryUrl: string, ref: string): Promise<RepositoryScanResult> {
   const url = validateRepositoryUrl(repositoryUrl)
   const safeRef = normalizeGitRef(ref)
+  const executable = resolveGitExecutable()
   const parent = await realpath(tmpdir())
   const directory = await mkdtemp(join(parent, 'archguard-scan-'))
   try {
-    await git(directory, ['init', '--bare', '--template='])
     try {
-      await git(directory, ['fetch', '--depth=1', '--no-tags', '--no-recurse-submodules', '--', url, safeRef], 45_000)
+      await git(executable, directory, ['init', '--bare', '--template='])
+    } catch (error) {
+      const failure = error as { code?: string; killed?: boolean }
+      if (failure.code === 'ENOENT' || failure.code === 'EACCES' || failure.code === 'EPERM') {
+        throw new Error(gitStartupError(error))
+      }
+      if (failure.killed) throw new Error('初始化 Git 扫描目录超时。')
+      throw new Error('无法初始化 Git 扫描目录。')
+    }
+    try {
+      await git(executable, directory, ['fetch', '--depth=1', '--no-tags', '--no-recurse-submodules', '--', url, safeRef], 45_000)
     } catch {
       throw new Error('无法获取 Git 提交，请确认仓库公开、引用存在且网络可用。')
     }
-    const commit = (await git(directory, ['rev-parse', '--verify', 'FETCH_HEAD^{commit}'])).toString().trim()
+    const commit = (await git(executable, directory, ['rev-parse', '--verify', 'FETCH_HEAD^{commit}'])).toString().trim()
     if (!hashPattern.test(commit)) throw new Error('无法确认扫描使用的提交。')
-    const { blobs, skipped } = selectBlobs(await git(directory, ['ls-tree', '-rlz', commit]))
-    const result = analyzeSources(await readBlobs(directory, blobs))
+    const { blobs, skipped } = selectBlobs(await git(executable, directory, ['ls-tree', '-rlz', commit]))
+    const result = analyzeSources(await readBlobs(executable, directory, blobs))
     return { ...result, commit, analyzerVersion: '1/ts-' + ts.version, skippedFiles: skipped }
   } finally {
     const actual = await realpath(directory)

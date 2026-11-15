@@ -61,7 +61,7 @@ export function ArchitectureResults({ report, projectId, scanId, jobs }: {
     <section className="card">
       <h2>架构检测</h2>
       <p>{cycleCount} 组循环依赖 · {report.rules.layers.length ? `${report.issues.length - cycleCount} 条分层违规` : '分层规则待配置'}</p>
-      {report.coverageLimited && <p className="muted">扫描覆盖有限，请结合未归层文件、未解析引用、跳过文件和配置警告复核结果。</p>}
+      {report.coverageLimited && <p className="muted">扫描覆盖有限</p>}
       {report.rules.layers.length > 0 && (
         <details className="scan-details">
           <summary>本次分层配置 · {report.unassignedFiles.length} 个文件未归层</summary>
@@ -91,7 +91,7 @@ export function ArchitectureResults({ report, projectId, scanId, jobs }: {
         {error && <p className="error" role="alert">{error}</p>}
         {baseline && !error && !comparison && <p className="muted" role="status">正在对比…</p>}
         {comparison && <div>
-          {comparison.coverageLimited && <p className="muted">至少一次扫描覆盖有限。不再检出的问题仍需复核。</p>}
+          {comparison.coverageLimited && <p className="muted">对比覆盖有限</p>}
           {([
             ['新增', comparison.added], ['仍存在', comparison.remaining], ['本次未检出', comparison.missing],
           ] as const).map(([label, issues]) => <details className="scan-details" key={label}>

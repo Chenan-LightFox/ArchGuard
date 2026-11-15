@@ -7,16 +7,22 @@ import { PlansPage } from './pages/PlansPage'
 import { LlmSettingsPage } from './pages/LlmSettingsPage'
 
 const sections = {
-  projects: { title: '项目工作区', nav: '项目', description: '登记仓库，建立架构扫描和需求变更的共同入口。' },
-  scans: { title: '架构扫描', nav: '架构扫描', description: '选择 Git 版本并查看 JS/TS 文件依赖。' },
-  plans: { title: '需求与计划', nav: '需求与计划', description: '管理需求、任务依赖和代码模块之间的关联。' },
-  changes: { title: '变更分析', nav: '变更分析', description: '追踪影响路径，比较接受变更、缩小范围和延后实施。' },
-  approvals: { title: '审批与发布', nav: '审批与发布', description: '审核固定版本的变更方案并生成计划版本。' },
-  reports: { title: '复扫与报告', nav: '复扫与报告', description: '对照实施后的测试证据、架构扫描和计划变化。' },
-  llm: { title: 'LLM 设置', nav: 'LLM 设置', description: '配置模型服务的 API Key。' },
+  projects: { title: '项目工作区', nav: '项目' },
+  scans: { title: '架构扫描', nav: '架构扫描' },
+  plans: { title: '需求与计划', nav: '需求与计划' },
+  changes: { title: '变更分析', nav: '变更分析' },
+  approvals: { title: '审批与发布', nav: '审批与发布' },
+  reports: { title: '复扫与报告', nav: '复扫与报告' },
+  llm: { title: 'LLM 设置', nav: 'LLM 设置' },
 } as const
 
 type Section = keyof typeof sections
+
+const connectionStatuses = {
+  connecting: { tone: 'running', text: '正在连接 API' },
+  ready: { tone: 'succeeded', text: 'API 已连接' },
+  offline: { tone: 'failed', text: 'API 离线' },
+} as const
 
 export function App() {
   const [section, setSection] = useState<Section>('projects')
@@ -62,13 +68,14 @@ export function App() {
 
   const active = projects.find((project) => project.id === selectedId) ?? projects[0]
   const current = sections[section]
+  const connection = connectionStatuses[health]
 
   return (
     <div className="layout">
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark" aria-hidden="true">A</span>
-          <div><strong>ArchGuard</strong><small>架构与变更工作台</small></div>
+          <strong>ArchGuard</strong>
         </div>
         <nav aria-label="工作台">
           {(Object.keys(sections) as Section[]).map((key) => (
@@ -81,13 +88,12 @@ export function App() {
       <main>
         <div className="topbar">
           <span>本地工作区{active ? ` / ${active.name}` : ''}</span>
-          <span className={`status ${health === 'ready' ? 'succeeded' : health === 'offline' ? 'failed' : ''}`} role="status">
-            {health === 'ready' ? 'API 已连接' : health === 'offline' ? 'API 离线' : '正在连接 API'}
+          <span className={`status ${connection.tone}`} role="status">
+            {connection.text}
           </span>
         </div>
         <header className="page-header">
           <h1>{current.title}</h1>
-          <p>{current.description}</p>
         </header>
         {projectError && (
           <div className="notice">
@@ -110,7 +116,6 @@ export function App() {
           active ? <RepositoryScansPage key={active.id} project={active} /> : (
             <section className="card">
               <h2>先选择一个项目</h2>
-              <p className="muted">在项目工作区登记或选择仓库后，即可提交扫描。</p>
               <button className="secondary" onClick={() => setSection('projects')}>返回项目工作区</button>
             </section>
           )
@@ -124,8 +129,6 @@ export function App() {
         ) : section === 'llm' ? <LlmSettingsPage /> : (
           <section className="card">
             <span className="status">待接入</span>
-            <h2>{current.nav}模块</h2>
-            <p className="muted">已预留工作台入口。对应数据和操作将在后续阶段接入。</p>
           </section>
         )}
       </main>

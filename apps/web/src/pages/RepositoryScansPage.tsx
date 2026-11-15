@@ -45,7 +45,7 @@ function ResultPanel({ result }: { result: RepositoryScanResult }) {
       )}
       <div className="scan-filter">
         <label htmlFor="dependency-search">筛选内部依赖</label>
-        <input id="dependency-search" value={search} placeholder="输入文件路径或导入名" onChange={(event) => {
+        <input id="dependency-search" value={search} onChange={(event) => {
           setSearch(event.target.value)
           setPage(0)
         }} />
@@ -163,11 +163,9 @@ export function RepositoryScansPage({ project }: { project: Project }) {
         <p className="muted break-code">{project.repositoryUrl}</p>
         <form onSubmit={submit}>
           <label htmlFor="scan-ref">分支、标签引用或提交 SHA</label>
-          <input id="scan-ref" value={ref} maxLength={200} onChange={(event) => setRef(event.target.value)}
-            placeholder="留空使用默认分支，标签示例 refs/tags/v1.0.0" />
+          <input id="scan-ref" value={ref} maxLength={200} onChange={(event) => setRef(event.target.value)} />
           <details>
             <summary>分层规则（可选）</summary>
-            <p className="muted">按最长路径前缀归层。跨层依赖须列入 allowed，层内依赖自动允许。</p>
             <button className="secondary" type="button" onClick={() => setRuleText(rulesExample)}>填入规则示例</button>
             <label htmlFor="architecture-rules">分层规则 JSON</label>
             <textarea id="architecture-rules" rows={7} value={ruleText} onChange={(event) => setRuleText(event.target.value)} />
