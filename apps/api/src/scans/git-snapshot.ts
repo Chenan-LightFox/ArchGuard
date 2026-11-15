@@ -6,11 +6,12 @@ import { promisify } from 'node:util'
 import ts from 'typescript'
 import type { RepositoryScanResult } from '@archguard/contracts'
 import { analyzeSources, isSourcePath } from './analyze-sources'
-import { gitStartupError, resolveGitExecutable } from './git-executable'
+import { gitFetchError, gitStartupError, resolveGitExecutable } from './git-executable'
 
 const gitExec = promisify(execFile)
 const maxSourceBytes = 16 * 1024 * 1024
 const maxFileBytes = 512 * 1024
+const fetchTimeoutSeconds = 45
 const hosts = new Set(['github.com', 'gitlab.com', 'bitbucket.org'])
 const ignoredDirectories = new Set(['node_modules', 'dist', 'build', 'coverage', 'vendor'])
 const hashPattern = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i
@@ -44,6 +45,7 @@ async function git(executable: string, directory: string, args: string[], timeou
     GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
     GIT_TERMINAL_PROMPT: '0',
     GIT_ALLOW_PROTOCOL: 'https',
+    LC_ALL: 'C',
   })
   const command = gitExec(executable, [
     '-c', 'http.followRedirects=false',
@@ -146,9 +148,9 @@ export async function scanRepository(repositoryUrl: string, ref: string): Promis
       throw new Error('无法初始化 Git 扫描目录。')
     }
     try {
-      await git(executable, directory, ['fetch', '--depth=1', '--no-tags', '--no-recurse-submodules', '--', url, safeRef], 45_000)
-    } catch {
-      throw new Error('无法获取 Git 提交，请确认仓库公开、引用存在且网络可用。')
+      await git(executable, directory, ['fetch', '--depth=1', '--no-tags', '--no-recurse-submodules', '--', url, safeRef], fetchTimeoutSeconds * 1000)
+    } catch (error) {
+      throw new Error(gitFetchError(error, fetchTimeoutSeconds))
     }
     const commit = (await git(executable, directory, ['rev-parse', '--verify', 'FETCH_HEAD^{commit}'])).toString().trim()
     if (!hashPattern.test(commit)) throw new Error('无法确认扫描使用的提交。')

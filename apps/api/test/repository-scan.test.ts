@@ -3,9 +3,22 @@ import { mkdirSync, mkdtempSync, rmdirSync, unlinkSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { resolveGitExecutable } from '../src/scans/git-executable'
+import { gitFetchError, resolveGitExecutable } from '../src/scans/git-executable'
 import { analyzeSources } from '../src/scans/analyze-sources'
 import { normalizeGitRef, validateRepositoryUrl } from '../src/scans/git-snapshot'
+
+test('identifies why Git fetch failed without exposing raw stderr', () => {
+  const describe = (error: unknown) => gitFetchError(error, 45)
+  assert.match(describe({ stderr: Buffer.from("fatal: couldn't find remote ref refs/heads/example") }), /分支或标签/)
+  assert.match(describe({ stderr: 'fatal: upload-pack: not our ref abc' }), /提交 SHA/)
+  assert.match(describe({ stderr: 'fatal: unable to access the URL: Could not resolve host: github.com' }), /DNS/)
+  assert.match(describe({ stderr: 'SSL certificate problem: unable to get local issuer certificate' }), /TLS 证书/)
+  assert.match(describe({ stderr: 'The requested URL returned error: 302' }), /跳转/)
+  assert.match(describe({ stderr: "fatal: could not read Username for 'https://github.com': terminal prompts disabled" }), /身份验证/)
+  assert.match(describe({ killed: true }), /45 秒/)
+  assert.match(describe({ stderr: 'The requested URL returned error: 429' }), /429/)
+  assert.doesNotMatch(describe({ stderr: 'unknown error: private diagnostic detail' }), /private diagnostic detail/)
+})
 
 test('finds Git for Windows when PATH points to its installation directory', { skip: process.platform !== 'win32' }, (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'archguard-git-path-'))
