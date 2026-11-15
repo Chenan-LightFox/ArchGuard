@@ -65,11 +65,23 @@ export function gitFetchError(error: unknown, timeoutSeconds: number): string {
   if (/SSL certificate|certificate verify failed|server certificate verification failed|untrusted root|SEC_E_UNTRUSTED_ROOT/i.test(stderr)) {
     return 'Git 无法验证远程 TLS 证书。请检查 Worker 的系统时间、CA 证书和网络代理。'
   }
+  const localProxyPort = /failed to connect to (?:127\.0\.0\.1|localhost|\[?::1\]?) port (\d{1,5})\b/i.exec(stderr)?.[1]
+  if (localProxyPort) {
+    return `Git 无法连接 Worker 所在服务器的本机代理（端口 ${localProxyPort}）。请确认代理正在该服务器监听。`
+  }
+  if (/failed to connect[^\r\n]* over proxy (?:127\.0\.0\.1|localhost|\[?::1\]?)(?:[:\s]|$)/i.test(stderr)) {
+    return 'Git 无法连接 Worker 所在服务器的本机代理。请核对代理监听地址和端口。'
+  }
+  const tunnelCode = /CONNECT tunnel failed, response\s+(\d{3})\b|received HTTP code\s+(\d{3})\s+from proxy/i.exec(stderr)
+  const proxyCode = tunnelCode?.[1] ?? tunnelCode?.[2]
   const httpCode = /(?:returned error:|HTTP(?:\/\d(?:\.\d)?)?(?: code)?)\s+(\d{3})\b/i.exec(stderr)?.[1]
+  if (proxyCode === '407' || httpCode === '407') {
+    return 'Git 请求的网络代理要求身份验证。请检查 Worker 的代理配置。'
+  }
+  if (proxyCode) return `Git 代理无法建立连接（HTTP ${proxyCode}）。请检查代理是否允许访问远程仓库。`
   if (httpCode?.startsWith('3') || /unable to update url base from redirection|redirect prohibited/i.test(stderr)) {
     return '仓库地址发生跳转。请在仓库页面复制当前的 HTTPS 克隆地址。'
   }
-  if (httpCode === '407') return 'Git 请求的网络代理要求身份验证。请检查 Worker 的代理配置。'
   if (httpCode === '401' || /authentication failed|could not read username|terminal prompts disabled/i.test(stderr)) {
     return '远程仓库要求身份验证。当前扫描支持匿名可访问的公开仓库。'
   }

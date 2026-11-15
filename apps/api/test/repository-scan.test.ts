@@ -44,6 +44,9 @@ test('identifies why Git fetch failed without exposing raw stderr', () => {
   assert.match(describe({ stderr: "fatal: could not read Username for 'https://github.com': terminal prompts disabled" }), /身份验证/)
   assert.match(describe({ killed: true }), /45 秒/)
   assert.match(describe({ stderr: 'The requested URL returned error: 429' }), /429/)
+  assert.match(describe({ stderr: 'CONNECT tunnel failed, response 407' }), /代理要求身份验证/)
+  assert.match(describe({ stderr: 'Failed to connect to 127.0.0.1 port 7890 after 1 ms' }), /本机代理.*7890/)
+  assert.match(describe({ stderr: 'Failed to connect to github.com:443 over proxy 127.0.0.1 after 0 ms' }), /本机代理/)
   assert.doesNotMatch(describe({ stderr: 'unknown error: private diagnostic detail' }), /private diagnostic detail/)
 })
 

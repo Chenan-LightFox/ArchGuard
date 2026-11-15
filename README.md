@@ -27,6 +27,8 @@ npm run dev
 
 在 Windows 上，PATH 应包含 `git.exe` 所在目录，例如 `D:\Git\cmd`。修改 PATH 后，从新终端重启 ArchGuard。也可以在启动前用 `ARCHGUARD_GIT_PATH` 指定可执行文件的绝对路径。
 
+如果服务器需要通过代理访问 GitHub，请在 Worker 的启动环境设置 `HTTPS_PROXY`，然后重启 Worker。Windows 的 `run.bat` 会沿用已有的 `HTTPS_PROXY` 或 `ALL_PROXY`，两者都为空时尝试使用 Git 全局配置中对 GitHub 生效的代理。其他启动方式需要在启动环境中设置代理。使用本机代理地址时，代理需在 Worker 所在服务器运行。
+
 ## 代码结构
 
 | 目录 | 职责 |
