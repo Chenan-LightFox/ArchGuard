@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Project } from '@archguard/contracts'
-import { api } from './api'
+import { api, apiLoginUrl, ApiResponseError } from './api'
 import { ProjectsPage } from './pages/ProjectsPage'
 import { RepositoryScansPage } from './pages/RepositoryScansPage'
 import { PlansPage } from './pages/PlansPage'
@@ -21,6 +21,7 @@ type Section = keyof typeof sections
 const connectionStatuses = {
   connecting: { tone: 'running', text: '正在连接 API' },
   ready: { tone: 'succeeded', text: 'API 已连接' },
+  unauthorized: { tone: '', text: 'API 需要登录' },
   offline: { tone: 'failed', text: 'API 离线' },
 } as const
 
@@ -31,7 +32,8 @@ export function App() {
   const [ready, setReady] = useState(false)
   const [projectError, setProjectError] = useState('')
   const [retry, setRetry] = useState(0)
-  const [health, setHealth] = useState<'connecting' | 'ready' | 'offline'>('connecting')
+  const [health, setHealth] = useState<keyof typeof connectionStatuses>('connecting')
+  const [healthError, setHealthError] = useState('')
 
   useEffect(() => {
     const controller = new AbortController()
@@ -39,9 +41,16 @@ export function App() {
     async function checkHealth() {
       try {
         await api.health(controller.signal)
-        if (!controller.signal.aborted) setHealth('ready')
-      } catch {
-        if (!controller.signal.aborted) setHealth('offline')
+        if (!controller.signal.aborted) {
+          setHealth('ready')
+          setHealthError('')
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          const unauthorized = error instanceof ApiResponseError && error.status === 401
+          setHealth(unauthorized ? 'unauthorized' : 'offline')
+          setHealthError(unauthorized ? '' : error instanceof Error ? error.message : '无法连接 API。')
+        }
       } finally {
         if (!controller.signal.aborted) timer = setTimeout(() => void checkHealth(), 5000)
       }
@@ -54,17 +63,23 @@ export function App() {
   }, [])
 
   useEffect(() => {
+    if (health !== 'ready') {
+      setReady(false)
+      setProjectError('')
+      return
+    }
     const controller = new AbortController()
     api.listProjects(controller.signal).then((result) => {
       if (controller.signal.aborted) return
       setProjects(result)
       setReady(true)
       setProjectError('')
-    }).catch(() => {
-      if (!controller.signal.aborted) setProjectError('无法加载项目列表，请确认 API 已启动。')
+    }).catch((error: unknown) => {
+      if (controller.signal.aborted) return
+      setProjectError(error instanceof Error ? error.message : '无法加载项目列表。')
     })
     return () => controller.abort()
-  }, [retry])
+  }, [health, retry])
 
   const active = projects.find((project) => project.id === selectedId) ?? projects[0]
   const current = sections[section]
@@ -88,17 +103,18 @@ export function App() {
       <main>
         <div className="topbar">
           <span>本地工作区{active ? ` / ${active.name}` : ''}</span>
-          <span className={`status ${connection.tone}`} role="status">
-            {connection.text}
-          </span>
+          <div className="api-connection">
+            <span className={`status ${connection.tone}`} role="status">{connection.text}</span>
+            {health === 'unauthorized' && <a className="api-login" href={apiLoginUrl}>登录 API</a>}
+          </div>
         </div>
         <header className="page-header">
           <h1>{current.title}</h1>
         </header>
-        {projectError && (
+        {(healthError || projectError) && (
           <div className="notice">
-            <p className="error" role="alert">{projectError}</p>
-            <button className="secondary" onClick={() => { setProjectError(''); setRetry((value) => value + 1) }}>重试</button>
+            <p className="error break-code" role="alert">{healthError || projectError}</p>
+            {projectError && <button className="secondary" onClick={() => { setProjectError(''); setRetry((value) => value + 1) }}>重试</button>}
           </div>
         )}
         {section === 'projects' ? (

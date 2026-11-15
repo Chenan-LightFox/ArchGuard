@@ -1,0 +1,40 @@
+# Import this file inside the existing HTTPS site block.
+@archguard path /ArchGuard /ArchGuard/*
+route @archguard {
+	redir /ArchGuard /ArchGuard/ 308
+
+	@archguard_backend path /ArchGuard/backend /ArchGuard/backend/*
+	handle @archguard_backend {
+		route {
+			# Let the public frontend detect missing credentials without a browser prompt.
+			@archguard_anonymous {
+				header !Authorization
+				not path /ArchGuard/backend/login
+			}
+			respond @archguard_anonymous 401
+
+			basic_auth {
+				archguard REPLACE_WITH_CADDY_PASSWORD_HASH
+			}
+			redir /ArchGuard/backend/login /ArchGuard/ 303
+
+			uri strip_prefix /ArchGuard/backend
+			rewrite * /api{path}
+			reverse_proxy 127.0.0.1:3101 {
+				header_up -Authorization
+			}
+		}
+	}
+
+	handle_path /ArchGuard/* {
+		root * /var/www/archguard
+		handle /assets/* {
+			file_server
+		}
+		handle {
+			header Cache-Control "no-cache"
+			try_files {path} /index.html
+			file_server
+		}
+	}
+}

@@ -4,14 +4,40 @@ import type {
   RepositoryScanDetail, ScanPreflight,
 } from '@archguard/contracts'
 
+const siteBase = import.meta.env.BASE_URL.replace(/\/+$/, '')
+const apiBase = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '') ||
+  (siteBase ? `${siteBase}/backend` : '/api')
+
+export const apiLoginUrl = `${apiBase}/login`
+const healthPath = '/health'
+
+export class ApiResponseError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message)
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api${path}`, init)
+  const url = `${apiBase}${path}`
+  let response: Response
+  try {
+    response = await fetch(url, init)
+  } catch (error) {
+    if (init?.signal?.aborted) throw error
+    throw new Error(`无法请求 ${url}。`)
+  }
   if (!response.ok) {
     const body: { message?: unknown } | null = await response.json().catch(() => null)
-    const message = typeof body?.message === 'string' ? body.message : `请求失败（${response.status}）。`
-    throw new Error(message)
+    const message = typeof body?.message === 'string' ? body.message : `${url} 返回 HTTP ${response.status}。`
+    throw new ApiResponseError(response.status, message)
   }
-  return response.json() as Promise<T>
+  try {
+    return await response.json() as T
+  } catch (error) {
+    if (init?.signal?.aborted) throw error
+    const format = response.headers.get('Content-Type')?.includes('text/html') ? 'HTML 页面' : '无法解析的响应'
+    throw new ApiResponseError(response.status, `${url} 返回 HTTP ${response.status} 和${format}，应返回 JSON。`)
+  }
 }
 
 function json(method: 'POST' | 'PUT', body: object): RequestInit {
@@ -19,8 +45,14 @@ function json(method: 'POST' | 'PUT', body: object): RequestInit {
 }
 
 export const api = {
-  health: (signal: AbortSignal) => request<HealthStatus>('/health', { signal }),
-  listProjects: (signal: AbortSignal) => request<Project[]>('/projects', { signal }),
+  health: async (signal: AbortSignal): Promise<HealthStatus> => {
+    const health = await request<HealthStatus>(healthPath, { signal, cache: 'no-store' })
+    if (health?.status !== 'ok' || health.database !== 'ready') {
+      throw new ApiResponseError(200, `${apiBase}${healthPath} 返回的 JSON 不是 ArchGuard 健康检查结果。`)
+    }
+    return health
+  },
+  listProjects: (signal: AbortSignal) => request<Project[]>('/projects', { signal, cache: 'no-store' }),
   createProject: (input: CreateProjectInput) => request<Project>('/projects', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

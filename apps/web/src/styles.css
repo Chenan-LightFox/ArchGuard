@@ -78,6 +78,8 @@ main { min-width: 0; width: 100%; max-width: 1512px; margin-inline: auto; paddin
 .topbar, .job-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .topbar { min-height: 46px; padding-bottom: 14px; border-bottom: var(--frame-width) solid var(--border-accent); color: var(--muted); font-size: 13px; }
 .topbar > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.api-connection { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px 12px; }
+.api-login { color: var(--signal); text-underline-offset: 3px; }
 .page-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
