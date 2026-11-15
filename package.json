@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "concurrently --kill-others --names api,worker,web \"npm run dev -w @archguard/api\" \"npm run dev:worker -w @archguard/api\" \"npm run dev -w @archguard/web\"",
     "build": "npm run build --workspaces --if-present",
-    "check": "npm run check --workspaces --if-present"
+    "check": "npm run check --workspaces --if-present",
+    "test:scan": "npm run test:scan -w @archguard/api",
+    "test": "npm test -w @archguard/api"
   },
   "overrides": {
     "rollup": "$rollup"

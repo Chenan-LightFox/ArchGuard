@@ -7,6 +7,8 @@
     "dev:worker": "tsx watch src/worker.ts",
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
+    "test:scan": "node --import tsx --test test/repository-scan.test.ts",
+    "test": "node --import tsx --test test/repository-scan.test.ts test/planning-architecture.test.ts",
     "start": "node dist/main.js",
     "start:worker": "node dist/worker.js"
   },

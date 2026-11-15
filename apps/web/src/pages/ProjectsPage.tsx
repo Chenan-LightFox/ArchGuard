@@ -65,7 +65,7 @@ export function ProjectsPage({ projects, selectedId, ready, onSelect, onCreate }
       </section>
       <section className="card">
         <h2>已登记项目</h2>
-        {ready && projects.length === 0 && <p className="muted">创建一个项目后，可以运行扫描环境检查。</p>}
+        {ready && projects.length === 0 && <p className="muted">创建一个项目后，可以提交仓库扫描。</p>}
         {!ready && <p className="muted">等待项目列表。</p>}
         <ul className="item-list">
           {projects.map((project) => (

@@ -8,7 +8,7 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; }
-button, input { font: inherit; }
+button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: default; opacity: .55; }
 :focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; }
@@ -27,7 +27,6 @@ nav button {
   display: flex; gap: 12px; align-items: center; padding: 10px 12px; text-align: left;
   border: 0; border-radius: 8px; color: #dce7f6; background: transparent;
 }
-nav button span { color: #adbed0; font-size: 12px; font-variant-numeric: tabular-nums; }
 nav button:hover, nav button[aria-current="page"] { background: #294361; color: #fff; }
 
 main { max-width: 1320px; width: 100%; margin: 0 auto; padding: 26px clamp(20px, 4vw, 56px) 56px; }
@@ -47,6 +46,13 @@ h2 { font-size: 19px; }
 form { display: grid; gap: 8px; margin-top: 18px; }
 label { font-size: 14px; font-weight: 650; }
 input { width: 100%; padding: 9px 10px; border: 1px solid #aebcd0; border-radius: 8px; margin-bottom: 6px; color: inherit; }
+select, textarea { max-width: 100%; padding: 8px 10px; border: 1px solid #aebcd0; border-radius: 8px; color: inherit; background: #fff; }
+textarea { width: 100%; resize: vertical; font-family: ui-monospace, Consolas, monospace; }
+fieldset { min-width: 0; margin: 0; padding: 0; border: 0; display: grid; gap: 8px; }
+.card > label, details > label { display: block; margin-top: 12px; }
+.metrics { display: flex; flex-wrap: wrap; gap: 10px 24px; padding: 12px 0; }
+.preserve-lines { white-space: pre-wrap; overflow-wrap: anywhere; }
+.plan-preview { margin-top: 16px; padding-top: 12px; border-top: 1px solid #dde5ee; }
 .primary, .secondary { width: fit-content; padding: 8px 14px; border: 1px solid transparent; border-radius: 8px; font-weight: 650; }
 .primary { background: #126762; color: #fff; }
 .primary:not(:disabled):hover { background: #0c4f4c; }
@@ -63,6 +69,16 @@ input { width: 100%; padding: 9px 10px; border: 1px solid #aebcd0; border-radius
 .status.failed { background: #fbe7e8; color: #8e292f; }
 .status.running { background: #e4edff; color: #214e9b; }
 .card > .status + h2, .job-item p { margin-top: 8px; }
+.break-code { overflow-wrap: anywhere; }
+.scan-filter { margin-top: 16px; max-width: 480px; }
+.scan-table { overflow-x: auto; }
+.scan-table table { width: 100%; border-collapse: collapse; }
+.scan-table th, .scan-table td { text-align: left; padding: 8px; border-bottom: 1px solid #dde5ee; overflow-wrap: anywhere; }
+.scan-pagination { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.scan-pagination button { margin-top: 0; }
+.scan-details { margin-top: 12px; }
+.scan-details summary { cursor: pointer; }
+.scan-paths { max-height: 280px; overflow: auto; overflow-wrap: anywhere; }
 
 @media (max-width: 850px) {
   .columns { grid-template-columns: 1fr; }

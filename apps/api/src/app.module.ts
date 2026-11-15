@@ -4,6 +4,8 @@ import { ProjectsModule } from './projects/projects.module'
 import { ScansModule } from './scans/scans.module'
 import { SqliteStore } from './storage/sqlite-store'
 import { StorageModule } from './storage/storage.module'
+import { PlansModule } from './plans/plans.module'
+import { LlmModule } from './llm/llm.module'
 
 @Controller('health')
 class HealthController {
@@ -17,7 +19,7 @@ class HealthController {
 }
 
 @Module({
-  imports: [StorageModule, ProjectsModule, ScansModule],
+  imports: [StorageModule, ProjectsModule, ScansModule, PlansModule, LlmModule],
   controllers: [HealthController],
 })
 export class AppModule {}

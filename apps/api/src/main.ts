@@ -1,5 +1,6 @@
 import 'reflect-metadata'
 import { NestFactory } from '@nestjs/core'
+import type { NestExpressApplication } from '@nestjs/platform-express'
 import { AppModule } from './app.module'
 
 async function bootstrap(): Promise<void> {
@@ -7,7 +8,8 @@ async function bootstrap(): Promise<void> {
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error('ARCHGUARD_API_PORT 应为 1 到 65535 之间的整数。')
   }
-  const app = await NestFactory.create(AppModule)
+  const app = await NestFactory.create<NestExpressApplication>(AppModule)
+  app.useBodyParser('json', { limit: '3mb' })
   app.enableShutdownHooks()
   app.setGlobalPrefix('api')
   await app.listen(port, '127.0.0.1')

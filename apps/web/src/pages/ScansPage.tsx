@@ -11,7 +11,7 @@ const labels: Record<ScanPreflight['status'], string> = {
 
 const formatDate = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'medium' })
 
-export function ScansPage({ project }: { project: Project }) {
+export function PreflightPanel({ project }: { project: Project }) {
   const [jobs, setJobs] = useState<ScanPreflight[] | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [pollError, setPollError] = useState('')
@@ -62,7 +62,7 @@ export function ScansPage({ project }: { project: Project }) {
       <section className="card scan-header">
         <div>
           <h2>扫描环境检查</h2>
-          <p className="muted">验证后台进程能接收任务并获取 Git 和 TypeScript 版本。仓库源码扫描将在下一阶段接入。</p>
+          <p className="muted">检查后台进程、Git 和 TypeScript 版本。</p>
         </div>
         <button className="primary" onClick={() => void startCheck()} disabled={submitting || jobs === null || Boolean(pollError)}>
           {submitting ? '提交中…' : '运行检查'}
