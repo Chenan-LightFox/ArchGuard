@@ -130,6 +130,23 @@ async function readBlobs(executable: string, directory: string, blobs: BlobEntry
   return contents
 }
 
+export async function cleanupScanDirectory(directory: string, parent: string): Promise<void> {
+  try {
+    const actual = await realpath(directory)
+    if (actual !== directory || dirname(actual) !== parent || !/^archguard-scan-[A-Za-z0-9]{6}$/.test(basename(actual))) {
+      console.warn('已跳过无法确认位置的 Git 扫描临时目录清理。')
+      return
+    }
+    await rm(actual, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 })
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code !== 'ENOENT') {
+      // Cleanup must not replace the original scan result or Git error.
+      console.warn('无法清理 Git 扫描临时目录 %s（%s）。', directory, code ?? 'UNKNOWN')
+    }
+  }
+}
+
 export async function scanRepository(repositoryUrl: string, ref: string): Promise<RepositoryScanResult> {
   const url = validateRepositoryUrl(repositoryUrl)
   const safeRef = normalizeGitRef(ref)
@@ -158,9 +175,6 @@ export async function scanRepository(repositoryUrl: string, ref: string): Promis
     const result = analyzeSources(await readBlobs(executable, directory, blobs))
     return { ...result, commit, analyzerVersion: '1/ts-' + ts.version, skippedFiles: skipped }
   } finally {
-    const actual = await realpath(directory)
-    if (dirname(actual) === parent && /^archguard-scan-[A-Za-z0-9]{6}$/.test(basename(actual))) {
-      await rm(actual, { recursive: true, force: true })
-    }
+    await cleanupScanDirectory(directory, parent)
   }
 }

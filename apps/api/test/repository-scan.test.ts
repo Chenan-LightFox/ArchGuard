@@ -1,11 +1,38 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import { once } from 'node:events'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { gitFetchError, resolveGitExecutable } from '../src/scans/git-executable'
 import { analyzeSources } from '../src/scans/analyze-sources'
-import { normalizeGitRef, validateRepositoryUrl } from '../src/scans/git-snapshot'
+import { cleanupScanDirectory, normalizeGitRef, validateRepositoryUrl } from '../src/scans/git-snapshot'
+
+test('retries cleanup while a Windows child process is releasing its scan directory', {
+  skip: process.platform !== 'win32',
+}, async () => {
+  const parent = realpathSync.native(tmpdir())
+  const directory = mkdtempSync(join(parent, 'archguard-scan-'))
+  const holder = spawn(process.execPath, ['-e', 'process.stdin.resume(); console.log("ready")'], {
+    cwd: directory, windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'],
+  })
+  const closed = once(holder, 'close')
+  try {
+    await once(holder.stdout, 'data')
+    const release = setTimeout(() => holder.stdin.end(), 200)
+    try {
+      await cleanupScanDirectory(directory, parent)
+      assert.equal(existsSync(directory), false)
+    } finally {
+      clearTimeout(release)
+    }
+  } finally {
+    holder.kill()
+    await closed
+    if (existsSync(directory)) rmdirSync(directory)
+  }
+})
 
 test('identifies why Git fetch failed without exposing raw stderr', () => {
   const describe = (error: unknown) => gitFetchError(error, 45)
