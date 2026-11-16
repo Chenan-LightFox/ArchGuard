@@ -147,9 +147,15 @@ fieldset { display: grid; gap: 10px; min-width: 0; margin: 0; padding: 0; border
 
 .item-list { display: grid; grid-template-columns: minmax(0, 1fr); margin: 16px 0 0; padding: 0; list-style: none; }
 .item-list:empty { display: none; }
-.project-item, .job-item { width: 100%; padding: 14px 12px; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--ink); text-align: left; }
-.project-item[aria-pressed="true"] { box-shadow: inset 4px 0 var(--signal); background: #443432; }
-.project-item:hover { background: var(--raised); }
+.project-item, .job-item { width: 100%; padding: 14px 12px; border: 0; background: transparent; color: var(--ink); text-align: left; }
+.project-row, .job-item { border-top: 1px solid var(--line); }
+.project-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.project-row:has(> .project-item[aria-pressed="true"]) { box-shadow: inset 4px 0 var(--signal); background: #443432; }
+.project-row:has(> .project-item[aria-pressed="false"]:hover) { background: var(--raised); }
+.project-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.project-actions .secondary { margin-top: 0; }
+.project-row .secondary { padding-inline: 8px; }
+.project-delete { color: var(--error); }
 .project-item strong, .project-item span { display: block; overflow-wrap: anywhere; }
 .project-item span, time { color: var(--muted); font-size: 12px; }
 .project-item span { margin-top: 4px; font-family: var(--mono); }

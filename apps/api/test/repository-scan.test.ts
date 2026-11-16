@@ -4,10 +4,70 @@ import { once } from 'node:events'
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
 import { gitFetchError, resolveGitExecutable } from '../src/scans/git-executable'
 import { analyzeSources } from '../src/scans/analyze-sources'
 import { cleanupScanDirectory, normalizeGitRef, validateRepositoryUrl } from '../src/scans/git-snapshot'
+import { SqliteStore } from '../src/storage/sqlite-store'
+
+test('keeps the queued repository for existing and new scans when a project URL changes', (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'archguard-scan-queue-'))
+  const filename = join(directory, 'archguard.sqlite')
+  const originalUrl = 'https://github.com/example/original.git'
+  const updatedUrl = 'https://github.com/example/updated.git'
+  t.after(() => {
+    if (existsSync(filename)) unlinkSync(filename)
+    rmdirSync(directory)
+  })
+
+  // An existing database predates the per-scan repository URL.
+  const legacy = new DatabaseSync(filename)
+  try {
+    legacy.exec(`
+      CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, repository_url TEXT NOT NULL, created_at TEXT NOT NULL);
+      CREATE TABLE repository_scans (
+        id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), ref TEXT NOT NULL,
+        status TEXT NOT NULL, created_at TEXT NOT NULL, lease_until TEXT, finished_at TEXT,
+        summary_json TEXT, result_json TEXT, error TEXT
+      );
+    `)
+    const createdAt = '2025-01-01T00:00:00.000Z'
+    legacy.prepare('INSERT INTO projects VALUES (?, ?, ?, ?)').run('project', 'Example', originalUrl, createdAt)
+    legacy.prepare('INSERT INTO repository_scans (id, project_id, ref, status, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run('legacy', 'project', 'HEAD', 'queued', createdAt)
+  } finally {
+    legacy.close()
+  }
+
+  const previousDirectory = process.env.ARCHGUARD_DATA_DIR
+  process.env.ARCHGUARD_DATA_DIR = directory
+  try {
+    const api = new SqliteStore()
+    try {
+      const rules = { layers: [], allowed: [] }
+      const before = api.enqueueScan('project', originalUrl, 'HEAD', rules)
+      api.updateProject('project', { name: 'Example', repositoryUrl: updatedUrl })
+      const after = api.enqueueScan('project', updatedUrl, 'HEAD', rules)
+
+      const worker = new SqliteStore()
+      try {
+        const now = new Date().toISOString()
+        const leaseUntil = new Date(Date.now() + 30_000).toISOString()
+        const claimed = Array.from({ length: 3 }, () => worker.claimScan(now, leaseUntil))
+        const urls = Object.fromEntries(claimed.map((scan) => [scan?.id, scan?.repositoryUrl]))
+        assert.deepEqual(urls, { legacy: originalUrl, [before.id]: originalUrl, [after.id]: updatedUrl })
+      } finally {
+        worker.onModuleDestroy()
+      }
+    } finally {
+      api.onModuleDestroy()
+    }
+  } finally {
+    if (previousDirectory === undefined) delete process.env.ARCHGUARD_DATA_DIR
+    else process.env.ARCHGUARD_DATA_DIR = previousDirectory
+  }
+})
 
 test('retries cleanup while a Windows child process is releasing its scan directory', {
   skip: process.platform !== 'win32',

@@ -1,9 +1,11 @@
-import { BadRequestException, Body, Controller, Get, Inject, Module, Post } from '@nestjs/common'
+import {
+  BadRequestException, Body, Controller, Delete, Get, Inject, Module, NotFoundException, Param, ParseUUIDPipe, Post, Put,
+} from '@nestjs/common'
 import type { CreateProjectInput, Project } from '@archguard/contracts'
 import { SqliteStore } from '../storage/sqlite-store'
 import { StorageModule } from '../storage/storage.module'
 
-function parseProjectInput(body: unknown): CreateProjectInput {
+function parseProjectInput(body: unknown, existingRepositoryUrl?: string): CreateProjectInput {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) {
     throw new BadRequestException('请输入项目名称和 Git 仓库地址。')
   }
@@ -15,7 +17,8 @@ function parseProjectInput(body: unknown): CreateProjectInput {
   }
 
   const repositoryUrl = typeof input.repositoryUrl === 'string' ? input.repositoryUrl.trim() : ''
-  if (repositoryUrl.length > 2048) {
+  // URL normalization can make an existing address longer than the original input.
+  if (repositoryUrl.length > 2048 && repositoryUrl !== existingRepositoryUrl) {
     throw new BadRequestException('Git 仓库地址过长。')
   }
 
@@ -45,6 +48,20 @@ class ProjectsController {
   @Post()
   create(@Body() body: unknown): Project {
     return this.store.createProject(parseProjectInput(body))
+  }
+
+  @Put(':projectId')
+  update(@Param('projectId', ParseUUIDPipe) projectId: string, @Body() body: unknown): Project {
+    const existingRepositoryUrl = this.store.getProject(projectId)?.repositoryUrl
+    const project = this.store.updateProject(projectId, parseProjectInput(body, existingRepositoryUrl))
+    if (!project) throw new NotFoundException('找不到该项目。')
+    return project
+  }
+
+  @Delete(':projectId')
+  delete(@Param('projectId', ParseUUIDPipe) projectId: string): { id: string } {
+    if (!this.store.deleteProject(projectId)) throw new NotFoundException('找不到该项目。')
+    return { id: projectId }
   }
 }
 

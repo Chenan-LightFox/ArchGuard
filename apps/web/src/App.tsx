@@ -122,6 +122,13 @@ export function App() {
               setProjects((current) => [project, ...current])
               setSelectedId(project.id)
             }}
+            onUpdate={(project) => {
+              setProjects((current) => current.map((item) => item.id === project.id ? project : item))
+            }}
+            onDelete={(id) => {
+              setProjects((current) => current.filter((project) => project.id !== id))
+              setSelectedId((current) => current === id ? undefined : current)
+            }}
           />
         ) : section === 'scans' ? (
           active ? <RepositoryScansPage key={active.id} project={active} /> : (

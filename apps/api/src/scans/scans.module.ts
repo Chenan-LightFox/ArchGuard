@@ -91,17 +91,18 @@ class RepositoryScansController {
     if (body !== undefined && (typeof body !== 'object' || body === null || Array.isArray(body))) {
       throw new BadRequestException('扫描参数应为对象。')
     }
+    let repositoryUrl: string
     let ref: string
     let rules: ArchitectureRules
     try {
-      validateRepositoryUrl(project.repositoryUrl)
+      repositoryUrl = validateRepositoryUrl(project.repositoryUrl)
       const input = body as { ref?: unknown; rules?: unknown } | undefined
       ref = normalizeGitRef(input?.ref)
       rules = parseArchitectureRules(input?.rules)
     } catch (error) {
       throw new BadRequestException(error instanceof Error ? error.message : '扫描参数无效。')
     }
-    return this.store.enqueueScan(projectId, ref, rules)
+    return this.store.enqueueScan(projectId, repositoryUrl, ref, rules)
   }
 }
 

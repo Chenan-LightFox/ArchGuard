@@ -51,6 +51,7 @@ export class SqliteStore {
       this.db.exec(`
         PRAGMA busy_timeout = 5000;
         PRAGMA foreign_keys = ON;
+        BEGIN IMMEDIATE;
 
         CREATE TABLE IF NOT EXISTS projects (
           id TEXT PRIMARY KEY,
@@ -78,6 +79,7 @@ export class SqliteStore {
         CREATE TABLE IF NOT EXISTS repository_scans (
           id TEXT PRIMARY KEY,
           project_id TEXT NOT NULL REFERENCES projects(id),
+          repository_url TEXT NOT NULL,
           ref TEXT NOT NULL,
           status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed')),
           created_at TEXT NOT NULL,
@@ -106,6 +108,16 @@ export class SqliteStore {
           PRIMARY KEY(project_id, version)
         );
       `)
+      const scanTableColumns = this.db.prepare('PRAGMA table_info(repository_scans)').all()
+      if (!scanTableColumns.some((column) => column.name === 'repository_url')) {
+        this.db.exec(`
+          ALTER TABLE repository_scans ADD COLUMN repository_url TEXT NOT NULL DEFAULT '';
+          UPDATE repository_scans SET repository_url = (
+            SELECT repository_url FROM projects WHERE id = repository_scans.project_id
+          );
+        `)
+      }
+      this.db.exec('COMMIT')
     } catch (error) {
       this.db.close()
       throw error
@@ -151,15 +163,16 @@ export class SqliteStore {
     return { ...readScan(scan), result: resultJson === null ? null : JSON.parse(resultJson) }
   }
 
-  enqueueScan(projectId: string, ref: string, rules: ArchitectureRules): RepositoryScan {
+  enqueueScan(projectId: string, repositoryUrl: string, ref: string, rules: ArchitectureRules): RepositoryScan {
     const id = randomUUID()
     const createdAt = new Date().toISOString()
     this.db.exec('BEGIN IMMEDIATE')
     try {
       const row = this.db.prepare(`
-        INSERT INTO repository_scans (id, project_id, ref, status, created_at) VALUES (?, ?, ?, 'queued', ?)
+        INSERT INTO repository_scans (id, project_id, repository_url, ref, status, created_at)
+        VALUES (?, ?, ?, ?, 'queued', ?)
         RETURNING ${scanColumns}
-      `).get(id, projectId, ref, createdAt) as unknown as ScanRow
+      `).get(id, projectId, repositoryUrl, ref, createdAt) as unknown as ScanRow
       this.db.prepare('INSERT INTO scan_rule_configs VALUES (?, ?)').run(id, JSON.stringify(rules))
       this.db.exec('COMMIT')
       return readScan(row)
@@ -178,7 +191,7 @@ export class SqliteStore {
     const row = this.db.prepare(`
       UPDATE repository_scans SET status = 'running', lease_until = ?
       WHERE id = (SELECT id FROM repository_scans WHERE status = 'queued' ORDER BY created_at, id LIMIT 1)
-      RETURNING id, ref, (SELECT repository_url FROM projects WHERE projects.id = project_id) AS repositoryUrl,
+      RETURNING id, ref, repository_url AS repositoryUrl,
         (SELECT rules_json FROM scan_rule_configs WHERE scan_id = repository_scans.id) AS rulesJson
     `).get(leaseUntil) as { id: string; ref: string; repositoryUrl: string; rulesJson: string | null } | undefined
     if (!row) return undefined
@@ -210,6 +223,32 @@ export class SqliteStore {
       INSERT INTO projects (id, name, repository_url, created_at) VALUES (?, ?, ?, ?)
     `).run(project.id, project.name, project.repositoryUrl, project.createdAt)
     return project
+  }
+
+  updateProject(id: string, input: CreateProjectInput): Project | undefined {
+    return this.db.prepare(`
+      UPDATE projects SET name = ?, repository_url = ? WHERE id = ?
+      RETURNING ${projectColumns}
+    `).get(input.name, input.repositoryUrl, id) as Project | undefined
+  }
+
+  deleteProject(id: string): boolean {
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      this.db.prepare(`
+        DELETE FROM scan_rule_configs
+        WHERE scan_id IN (SELECT id FROM repository_scans WHERE project_id = ?)
+      `).run(id)
+      this.db.prepare('DELETE FROM repository_scans WHERE project_id = ?').run(id)
+      this.db.prepare('DELETE FROM scan_preflights WHERE project_id = ?').run(id)
+      this.db.prepare('DELETE FROM plan_versions WHERE project_id = ?').run(id)
+      const { changes } = this.db.prepare('DELETE FROM projects WHERE id = ?').run(id)
+      this.db.exec('COMMIT')
+      return changes > 0
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
   }
 
   createPlan(projectId: string, plan: PlanDraft): PlanVersion {

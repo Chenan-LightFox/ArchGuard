@@ -52,11 +52,10 @@ export const api = {
     return health
   },
   listProjects: (signal: AbortSignal) => request<Project[]>('/projects', { signal, cache: 'no-store' }),
-  createProject: (input: CreateProjectInput) => request<Project>('/projects', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  }),
+  createProject: (input: CreateProjectInput) => request<Project>('/projects', json('POST', input)),
+  updateProject: (id: string, input: CreateProjectInput) =>
+    request<Project>(`/projects/${id}`, json('PUT', input)),
+  deleteProject: (id: string) => request<{ id: string }>(`/projects/${id}`, { method: 'DELETE' }),
   listPreflights: (projectId: string, signal: AbortSignal) =>
     request<ScanPreflight[]>(`/projects/${projectId}/scans/preflights`, { signal }),
   startPreflight: (projectId: string) =>
