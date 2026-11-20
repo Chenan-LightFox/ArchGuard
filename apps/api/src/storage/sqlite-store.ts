@@ -3,6 +3,10 @@ import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type {
+  ChangeAnalysis,
+  ChangeAnalysisInput,
+  ChangeAnalysisResult,
+  ChangeAnalysisSummary,
   CreateProjectInput,
   ArchitectureRules,
   PlanDraft,
@@ -29,6 +33,22 @@ const scanColumns = `
 `
 
 type ScanRow = Omit<RepositoryScan, 'summary'> & { summaryJson: string | null }
+
+const changeColumns = `
+  id, project_id AS projectId, scan_id AS scanId, plan_version AS planVersion,
+  status, created_at AS createdAt, finished_at AS finishedAt, description,
+  result_json AS resultJson, error
+`
+const changeSummaryColumns = `
+  id, project_id AS projectId, scan_id AS scanId, plan_version AS planVersion,
+  status, created_at AS createdAt, finished_at AS finishedAt, description, error
+`
+type ChangeRow = Omit<ChangeAnalysis, 'result'> & { resultJson: string | null }
+
+function readChange(row: ChangeRow): ChangeAnalysis {
+  const { resultJson, ...analysis } = row
+  return { ...analysis, result: resultJson === null ? null : JSON.parse(resultJson) }
+}
 
 function readScan(row: ScanRow): RepositoryScan {
   const { summaryJson, ...scan } = row
@@ -107,6 +127,25 @@ export class SqliteStore {
           plan_json TEXT NOT NULL,
           PRIMARY KEY(project_id, version)
         );
+
+        CREATE TABLE IF NOT EXISTS change_analyses (
+          id TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL REFERENCES projects(id),
+          scan_id TEXT NOT NULL REFERENCES repository_scans(id),
+          plan_version INTEGER NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed')),
+          created_at TEXT NOT NULL,
+          lease_until TEXT,
+          finished_at TEXT,
+          description TEXT NOT NULL,
+          result_json TEXT,
+          error TEXT,
+          FOREIGN KEY (project_id, plan_version) REFERENCES plan_versions(project_id, version)
+        );
+        CREATE INDEX IF NOT EXISTS change_analyses_project_created
+          ON change_analyses(project_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS change_analyses_status_created
+          ON change_analyses(status, created_at);
       `)
       const scanTableColumns = this.db.prepare('PRAGMA table_info(repository_scans)').all()
       if (!scanTableColumns.some((column) => column.name === 'repository_url')) {
@@ -239,6 +278,7 @@ export class SqliteStore {
         DELETE FROM scan_rule_configs
         WHERE scan_id IN (SELECT id FROM repository_scans WHERE project_id = ?)
       `).run(id)
+      this.db.prepare('DELETE FROM change_analyses WHERE project_id = ?').run(id)
       this.db.prepare('DELETE FROM repository_scans WHERE project_id = ?').run(id)
       this.db.prepare('DELETE FROM scan_preflights WHERE project_id = ?').run(id)
       this.db.prepare('DELETE FROM plan_versions WHERE project_id = ?').run(id)
@@ -274,6 +314,69 @@ export class SqliteStore {
       SELECT created_at AS createdAt, plan_json AS planJson FROM plan_versions WHERE project_id = ? AND version = ?
     `).get(projectId, version) as { createdAt: string; planJson: string } | undefined
     if (row) return { ...JSON.parse(row.planJson), version, createdAt: row.createdAt }
+  }
+
+  listChangeAnalyses(projectId: string): ChangeAnalysisSummary[] {
+    const rows = this.db.prepare(`
+      SELECT ${changeSummaryColumns} FROM change_analyses
+      WHERE project_id = ? ORDER BY created_at DESC, id LIMIT 30
+    `).all(projectId) as unknown as ChangeAnalysisSummary[]
+    return rows
+  }
+
+  getChangeAnalysis(projectId: string, id: string): ChangeAnalysis | undefined {
+    const row = this.db.prepare(`
+      SELECT ${changeColumns} FROM change_analyses WHERE project_id = ? AND id = ?
+    `).get(projectId, id) as ChangeRow | undefined
+    return row && readChange(row)
+  }
+
+  enqueueChangeAnalysis(projectId: string, input: ChangeAnalysisInput): ChangeAnalysis {
+    const id = randomUUID()
+    const createdAt = new Date().toISOString()
+    const row = this.db.prepare(`
+      INSERT INTO change_analyses
+        (id, project_id, scan_id, plan_version, status, created_at, description)
+      VALUES (?, ?, ?, ?, 'queued', ?, ?)
+      RETURNING ${changeColumns}
+    `).get(id, projectId, input.scanId, input.planVersion, createdAt, input.description) as unknown as ChangeRow
+    return readChange(row)
+  }
+
+  claimChangeAnalysis(now: string, leaseUntil: string):
+    { id: string; projectId: string; scanId: string; planVersion: number; description: string } | undefined {
+    this.db.prepare(`
+      UPDATE change_analyses
+      SET status = 'failed', finished_at = ?, error = '分析进程中断或处理超时，请重新提交。', lease_until = NULL
+      WHERE status = 'running' AND lease_until <= ?
+    `).run(now, now)
+    return this.db.prepare(`
+      UPDATE change_analyses SET status = 'running', lease_until = ?
+      WHERE id = (
+        SELECT id FROM change_analyses WHERE status = 'queued' ORDER BY created_at, id LIMIT 1
+      )
+      RETURNING id, project_id AS projectId, scan_id AS scanId,
+        plan_version AS planVersion, description
+    `).get(leaseUntil) as {
+      id: string; projectId: string; scanId: string; planVersion: number; description: string
+    } | undefined
+  }
+
+  finishChangeAnalysis(id: string, result: ChangeAnalysisResult | null, error: string | null): void {
+    const finishedAt = new Date().toISOString()
+    this.db.prepare(`
+      UPDATE change_analyses SET status = ?, finished_at = ?, result_json = ?, error = ?, lease_until = NULL
+      WHERE id = ? AND status = 'running' AND lease_until > ?
+    `).run(result ? 'succeeded' : 'failed', finishedAt, result && JSON.stringify(result), error, id, finishedAt)
+  }
+
+  updateChangeAnalysisResult(id: string, result: ChangeAnalysisResult): ChangeAnalysis | undefined {
+    const row = this.db.prepare(`
+      UPDATE change_analyses SET result_json = ?
+      WHERE id = ? AND status = 'succeeded'
+      RETURNING ${changeColumns}
+    `).get(JSON.stringify(result), id) as unknown as ChangeRow | undefined
+    return row && readChange(row)
   }
 
   listPreflights(projectId: string): ScanPreflight[] {
