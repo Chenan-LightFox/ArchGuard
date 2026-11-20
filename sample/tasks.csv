@@ -1,0 +1,9 @@
+id,title,requirementIds,predecessorIds,effortHours,durationDays,hourlyRate,modulePaths
+T1,实现会话状态与本地恢复,REQ-01,,8,1,120,frontend/src/stores/auth.js
+T2,实现登录退出与会话校验,REQ-01,T1,12,1.5,120,frontend/src/services/auth.js
+T3,实现统一请求凭证与失效处理,REQ-01,T2,10,1.25,120,frontend/src/services/api.js
+T4,实现登录路由守卫,REQ-01,T2|T3,8,1,120,frontend/src/router/index.js
+T5,实现应用入口初始化,REQ-01|REQ-04,T1|T4,6,0.75,120,frontend/src/main.js
+T6,实现邮件服务请求,REQ-02,T3,12,1.5,120,frontend/src/services/mail.js
+T7,实现邮件实时连接与重连,REQ-03,T3,12,1.5,120,frontend/src/services/ws.js
+T8,配置开发服务与 API 代理,REQ-04,T3|T7,4,0.5,120,frontend/vite.config.js

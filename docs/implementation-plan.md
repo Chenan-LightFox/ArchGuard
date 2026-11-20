@@ -2,7 +2,7 @@
 
 ## 交付边界
 
-公开 Git 仓库扫描、架构检测和计划基线已接入工作台。后续可通过稳定的模块路径和任务编号接入变更分析。总体设计见 [Web 架构设计](web-architecture.md)。
+公开 Git 仓库扫描、架构检测、计划基线和变更影响识别已接入工作台。变更分析以固定扫描和计划版本为基线，由 Worker 生成需求/任务匹配、代码反向依赖路径及待确认候选；仅关联同一需求的任务归为复核候选，不自动断言需要修改。LLM 仅解释已有候选，必须引用任务自己的证据并保留后端计算的影响类型；工期与成本仍应由确定性排程规则计算。三方案计算、审批发布、实施验证与报告仍待接入。总体设计见 [Web 架构设计](web-architecture.md)。
 
 ## 本阶段 · Git 仓库扫描
 
@@ -43,6 +43,6 @@
 
 ## 接通两个工作包
 
-1. 变更分析读取指定 `scanId` 与 `planVersionId`，通过任务的代码路径映射汇合两张依赖图。实际改动、复核和排期影响分别记录。
+1. [x] 变更分析读取指定 `scanId` 与计划版本，通过任务代码路径映射汇合两张依赖图；实际改动、复核和排期影响分别记录，并保存人工确认与 AI 证据引用。接口为 `POST /api/projects/:projectId/change-analyses`、`POST /api/projects/:projectId/change-analyses/:analysisId/confirm` 和 `POST /api/projects/:projectId/change-analyses/:analysisId/ai-candidates`。
 2. 以基线和三种任务差异复用同一排程函数。保存工时、成本和交付变化的计算输入。
 3. 选择一个真实 JS/TS 项目的固定提交，手工核对扫描边和受影响任务。用同一案例完成审批、代码修改、测试、复扫与报告。

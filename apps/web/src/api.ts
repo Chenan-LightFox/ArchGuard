@@ -1,5 +1,5 @@
 import type {
-  ArchitectureComparison, ArchitectureRules, CreateProjectInput, HealthStatus, LlmSettingsInput,
+  ArchitectureComparison, ArchitectureRules, ChangeAnalysis, ChangeAnalysisInput, ChangeAnalysisSummary, CreateProjectInput, HealthStatus, LlmSettingsInput,
   LlmSettingsStatus, PlanDraft, PlanInput, PlanVersion, PlanVersionSummary, Project, RepositoryScan,
   RepositoryScanDetail, ScanPreflight,
 } from '@archguard/contracts'
@@ -79,4 +79,16 @@ export const api = {
   llmStatus: (signal: AbortSignal) => request<LlmSettingsStatus>('/llm/settings', { signal }),
   configureLlm: (input: LlmSettingsInput) => request<LlmSettingsStatus>('/llm/settings', json('PUT', input)),
   clearLlm: () => request<LlmSettingsStatus>('/llm/settings', { method: 'DELETE' }),
+  listChangeAnalyses: (projectId: string, signal: AbortSignal) =>
+    request<ChangeAnalysisSummary[]>(`/projects/${projectId}/change-analyses`, { signal, cache: 'no-store' }),
+  getChangeAnalysis: (projectId: string, analysisId: string, signal: AbortSignal) =>
+    request<ChangeAnalysis>(`/projects/${projectId}/change-analyses/${analysisId}`, { signal, cache: 'no-store' }),
+  startChangeAnalysis: (projectId: string, input: ChangeAnalysisInput) =>
+    request<ChangeAnalysis>(`/projects/${projectId}/change-analyses`, json('POST', input)),
+  confirmChangeAnalysis: (projectId: string, analysisId: string, confirmedTaskIds: string[]) =>
+    request<ChangeAnalysis>(`/projects/${projectId}/change-analyses/${analysisId}/confirm`,
+      json('POST', { confirmedTaskIds })),
+  extractAiCandidates: (projectId: string, analysisId: string) =>
+    request<ChangeAnalysis>(`/projects/${projectId}/change-analyses/${analysisId}/ai-candidates`,
+      json('POST', {})),
 }
