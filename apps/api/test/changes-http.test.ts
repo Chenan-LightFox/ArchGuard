@@ -70,6 +70,24 @@ test('real HTTP integration: auth, submit, decide, and report', async (t) => {
   const port = (app.getHttpServer().address() as AddressInfo).port
   const base = `http://127.0.0.1:${port}`
   try {
+    // Both merged change-analysis and scenario-preview routes must remain available.
+    const preview = await request(base, `/api/projects/${project.id}/plan-versions/1/scenarios/preview`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ basePlanVersion: 1, acceptTasksCsv: csv, reduceTasksCsv: csv, deferTasksCsv: '' }),
+    })
+    assert.equal(preview.status, 200)
+    assert.deepEqual((preview.body.scenarios as { kind: string }[]).map(({ kind }) => kind), ['accept', 'reduce', 'defer'])
+
+    const analysisRequest = await request(base, `/api/projects/${project.id}/change-analyses`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: 'REQ-07 导出记录', scanId: scan.id, planVersion: 1 }),
+    })
+    assert.equal(analysisRequest.status, 202)
+    assert.equal(analysisRequest.body.status, 'queued')
+    const analysisDetail = await request(base, `/api/projects/${project.id}/change-analyses/${analysisRequest.body.id}`)
+    assert.equal(analysisDetail.status, 200)
+    assert.equal(analysisDetail.body.id, analysisRequest.body.id)
+
     const unauth = await request(base, `/api/projects/${project.id}/change-requests`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'x', description: '', basePlanVersion: 1, baseScanId: scan.id }),

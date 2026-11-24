@@ -193,6 +193,7 @@ fieldset { display: grid; gap: 10px; min-width: 0; margin: 0; padding: 0; border
 .scan-table th { background: var(--raised); color: var(--ink); font-size: 13px; }
 .scan-table td { min-width: 60px; font-size: 14px; }
 .scan-table tr:hover td { background: var(--inset); }
+.change-confirm { width: auto; min-height: 0; margin: 0; accent-color: var(--signal); }
 .scan-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 12px; }
 .scan-pagination button { margin-top: 0; }
 .scan-details { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--line); }

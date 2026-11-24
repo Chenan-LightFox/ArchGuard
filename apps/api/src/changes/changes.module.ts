@@ -31,6 +31,11 @@ import { createFixtureAdapters } from './fixture-adapters'
 import { fail, toHttpException } from './errors'
 import { SqliteStore } from '../storage/sqlite-store'
 import { StorageModule } from '../storage/storage.module'
+import { ChangeAnalysesController } from './change-analyses.controller'
+import { LlmModule, OpenAiCompatibleProvider } from '../llm/llm.module'
+
+export { parseAiReview } from './change-analyses.controller'
+
 
 function parseCreate(body: unknown): CreateChangeRequestInput {
   const input = body as Partial<CreateChangeRequestInput> | null
@@ -297,10 +302,11 @@ export class ChangesController {
 }
 
 @Module({
-  imports: [StorageModule],
-  controllers: [ChangesController],
+  imports: [StorageModule, LlmModule],
+  controllers: [ChangesController, ChangeAnalysesController],
   providers: [
     ActorResolver,
+    OpenAiCompatibleProvider,
     {
       provide: ANALYSIS_ADAPTER,
       useFactory: () => process.env.ARCHGUARD_ENABLE_DEMO_FIXTURES === '1'
