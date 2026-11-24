@@ -2,6 +2,7 @@ import {
   BadRequestException, Body, Controller, Delete, Get, Inject, Module, NotFoundException, Param, ParseUUIDPipe, Post, Put,
 } from '@nestjs/common'
 import type { CreateProjectInput, Project } from '@archguard/contracts'
+import { toHttpException } from '../changes/errors'
 import { SqliteStore } from '../storage/sqlite-store'
 import { StorageModule } from '../storage/storage.module'
 
@@ -60,7 +61,11 @@ class ProjectsController {
 
   @Delete(':projectId')
   delete(@Param('projectId', ParseUUIDPipe) projectId: string): { id: string } {
-    if (!this.store.deleteProject(projectId)) throw new NotFoundException('找不到该项目。')
+    try {
+      if (!this.store.deleteProject(projectId)) throw new NotFoundException('找不到该项目。')
+    } catch (error) {
+      throw toHttpException(error)
+    }
     return { id: projectId }
   }
 }

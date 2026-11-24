@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "test:scan": "node --import tsx --test test/repository-scan.test.ts",
-    "test": "node --import tsx --test test/repository-scan.test.ts test/planning-architecture.test.ts",
+    "test": "node --import tsx --test test/repository-scan.test.ts test/planning-architecture.test.ts test/changes-db.test.ts test/changes-controller.test.ts test/changes-regressions.test.ts test/changes-http.test.ts",
+    "demo:d": "node --import tsx scripts/demo-d.ts",
     "start": "node dist/main.js",
     "start:worker": "node dist/worker.js"
   },
