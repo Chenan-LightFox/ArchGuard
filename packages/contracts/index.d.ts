@@ -158,3 +158,35 @@ export interface LlmSettingsStatus {
   baseUrl: string
   model: string
 }
+
+export interface PlanScenarioInput {
+  basePlanVersion: number
+  acceptTasksCsv: string
+  reduceTasksCsv: string
+  deferTasksCsv: string
+}
+
+export type PlanScenarioKind = 'accept' | 'reduce' | 'defer'
+
+export interface PlanScenarioDelta {
+  effortHours: number
+  cost: number
+  durationDays: number
+}
+
+export interface PlanScenario {
+  kind: PlanScenarioKind
+  title: string
+  plan: PlanDraft
+  delta: PlanScenarioDelta
+  futurePlan: PlanDraft | null
+  assumptions: string[]
+  risks: string[]
+}
+
+export interface PlanScenarioComparison {
+  basePlanVersion: number
+  basePlan: PlanDraft
+  scenarios: PlanScenario[]
+  formulaVersion: 'c-schedule-v1'
+}

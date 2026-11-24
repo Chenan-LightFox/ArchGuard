@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { compareArchitecture, detectArchitecture, parseArchitectureRules } from '../src/architecture/rules'
 import { buildPlan } from '../src/plans/build-plan'
+import { buildScenarios } from '../src/plans/build-scenarios'
 import type { RepositoryAnalysis } from '@archguard/contracts'
 
 const graph: RepositoryAnalysis = {
@@ -64,4 +65,31 @@ test('imports a baseline and distinguishes effort from delivery duration', () =>
 
 test('rounds the sum of decimal labor costs to cents', () => {
   assert.equal(buildPlan(requirements, header + '\nT1,测试,REQ-07,,1.005,,1,').metrics.cost, 1.01)
+})
+
+test('compares accept, reduce and defer scenarios against one baseline', () => {
+  const base = buildPlan(requirements, csv)
+  const header = 'id,title,requirementIds,predecessorIds,effortHours,durationDays,hourlyRate,modulePaths'
+  const acceptCsv = [
+    header,
+    'T1,导出服务,REQ-07,,32,,150,src/export/',
+    'T2,回归测试,REQ-07,T1,12,,100,test/',
+  ].join('\n')
+  const reduceCsv = [
+    header,
+    'T1,仅记录事件,REQ-07,,22,,150,src/export/',
+    'T2,回归测试,REQ-07,T1,10,,100,test/',
+  ].join('\n')
+  const result = buildScenarios(base, 1, {
+    basePlanVersion: 1,
+    acceptTasksCsv: acceptCsv,
+    reduceTasksCsv: reduceCsv,
+    deferTasksCsv: acceptCsv,
+  })
+  assert.equal(result.scenarios.length, 3)
+  assert.deepEqual(result.scenarios.map((item) => item.kind), ['accept', 'reduce', 'defer'])
+  assert.equal(result.scenarios[0].delta.effortHours, -28)
+  assert.equal(result.scenarios[1].delta.effortHours, -40)
+  assert.equal(result.scenarios[2].delta.effortHours, 0)
+  assert.equal(result.scenarios[2].futurePlan?.metrics.effortHours, 44)
 })

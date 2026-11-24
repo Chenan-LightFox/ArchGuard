@@ -1,8 +1,9 @@
 import { BadRequestException, Body, Controller, Get, HttpCode, Inject, Module, NotFoundException, Param, ParseIntPipe, ParseUUIDPipe, Post } from '@nestjs/common'
-import type { PlanDraft, PlanVersion, PlanVersionSummary } from '@archguard/contracts'
+import type { PlanDraft, PlanScenarioComparison, PlanScenarioInput, PlanVersion, PlanVersionSummary } from '@archguard/contracts'
 import { SqliteStore } from '../storage/sqlite-store'
 import { StorageModule } from '../storage/storage.module'
 import { buildPlan } from './build-plan'
+import { buildScenarios } from './build-scenarios'
 
 @Controller('projects/:projectId/plan-versions')
 class PlansController {
@@ -52,6 +53,29 @@ class PlansController {
     const plan = this.store.getPlan(projectId, version)
     if (!plan) throw new NotFoundException('找不到该计划版本。')
     return plan
+  }
+
+  @Post(':version/scenarios/preview')
+  @HttpCode(200)
+  previewScenarios(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('version', ParseIntPipe) version: number,
+    @Body() body: unknown,
+  ): PlanScenarioComparison {
+    this.requireProject(projectId)
+    const base = this.store.getPlan(projectId, version)
+    if (!base) throw new NotFoundException('找不到该计划版本。')
+    const input = body as Partial<PlanScenarioInput> | null
+    if (typeof input?.acceptTasksCsv !== 'string' || typeof input?.reduceTasksCsv !== 'string' ||
+        typeof input?.deferTasksCsv !== 'string' || input.acceptTasksCsv.length > 250_000 ||
+        input.reduceTasksCsv.length > 250_000 || input.deferTasksCsv.length > 250_000) {
+      throw new BadRequestException('请提供接受、缩小范围和延期三个方案的任务 CSV。')
+    }
+    try {
+      return buildScenarios(base, version, input as PlanScenarioInput)
+    } catch (error) {
+      throw new BadRequestException((error as Error).message)
+    }
   }
 }
 

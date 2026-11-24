@@ -5,6 +5,7 @@ import { ProjectsPage } from './pages/ProjectsPage'
 import { RepositoryScansPage } from './pages/RepositoryScansPage'
 import { PlansPage } from './pages/PlansPage'
 import { LlmSettingsPage } from './pages/LlmSettingsPage'
+import { ChangesPage } from './pages/ChangesPage'
 
 const sections = {
   projects: { title: '项目工作区', nav: '项目' },
@@ -144,7 +145,11 @@ export function App() {
               <button className="secondary" onClick={() => setSection('projects')}>返回项目工作区</button>
             </section>
           )
-        ) : section === 'llm' ? <LlmSettingsPage /> : (
+        ) : section === 'llm' ? <LlmSettingsPage /> : section === 'changes' ? (
+          active ? <ChangesPage key={active.id} project={active} /> : (
+            <section className="card"><button className="secondary" onClick={() => setSection('projects')}>返回项目工作区</button></section>
+          )
+        ) : (
           <section className="card">
             <span className="status">待接入</span>
           </section>
