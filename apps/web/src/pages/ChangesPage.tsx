@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import type { AiImpactVerdict, ChangeAnalysis, ChangeAnalysisSummary, ChangeTaskImpact, PlanVersionSummary, Project, RepositoryScan } from '@archguard/contracts'
 import { api } from '../api'
+import { PlanScenariosPanel } from './PlanScenariosPanel'
 
 const classificationLabels: Record<ChangeTaskImpact['classification'], string> = {
   change: '描述直接指向',
@@ -310,6 +311,7 @@ export function ChangesPage({ project }: { project: Project }) {
           </ul>
         </section>
       )}
+      <PlanScenariosPanel project={project} />
     </div>
   )
 }

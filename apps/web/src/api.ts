@@ -1,6 +1,7 @@
 import type {
-  ArchitectureComparison, ArchitectureRules, ChangeAnalysis, ChangeAnalysisInput, ChangeAnalysisSummary, CreateProjectInput, HealthStatus, LlmSettingsInput,
-  LlmSettingsStatus, PlanDraft, PlanInput, PlanVersion, PlanVersionSummary, Project, RepositoryScan,
+  ArchitectureComparison, ArchitectureRules, ChangeAnalysis, ChangeAnalysisInput, ChangeAnalysisSummary,
+  CreateProjectInput, HealthStatus, LlmSettingsInput, LlmSettingsStatus, PlanDraft, PlanInput,
+  PlanScenarioComparison, PlanScenarioInput, PlanVersion, PlanVersionSummary, Project, RepositoryScan,
   RepositoryScanDetail, ScanPreflight,
 } from '@archguard/contracts'
 
@@ -76,6 +77,8 @@ export const api = {
     request<PlanDraft>(`/projects/${projectId}/plan-versions/preview`, json('POST', input)),
   createPlan: (projectId: string, input: PlanInput) =>
     request<PlanVersion>(`/projects/${projectId}/plan-versions`, json('POST', input)),
+  previewScenarios: (projectId: string, version: number, input: PlanScenarioInput) =>
+    request<PlanScenarioComparison>(`/projects/${projectId}/plan-versions/${version}/scenarios/preview`, json('POST', input)),
   llmStatus: (signal: AbortSignal) => request<LlmSettingsStatus>('/llm/settings', { signal }),
   configureLlm: (input: LlmSettingsInput) => request<LlmSettingsStatus>('/llm/settings', json('PUT', input)),
   clearLlm: () => request<LlmSettingsStatus>('/llm/settings', { method: 'DELETE' }),

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { compareArchitecture, detectArchitecture, parseArchitectureRules } from '../src/architecture/rules'
 import { buildPlan } from '../src/plans/build-plan'
+import { buildScenarios } from '../src/plans/build-scenarios'
 import { analyzeChange } from '../src/changes/analyze-change'
 import { parseAiReview } from '../src/changes/changes.module'
 import type { ChangeAnalysisResult, PlanVersion, RepositoryAnalysis, RepositoryScanResult } from '@archguard/contracts'
@@ -241,4 +242,31 @@ test('preserves program candidates while validating AI verdicts, upstream tasks,
   assert.ok(incompleteInventory.aiWarnings?.some((warning) => warning.includes('资料不完整')))
   assert.throws(() => parseAiReview('没有 JSON 输出', result, true), /不是有效 JSON/)
   assert.throws(() => parseAiReview('{"upstreamTasks":[]}', result, true), /缺少有效的复核结果/)
+})
+
+test('compares accept, reduce and defer scenarios against one baseline', () => {
+  const base = buildPlan(requirements, csv)
+  const header = 'id,title,requirementIds,predecessorIds,effortHours,durationDays,hourlyRate,modulePaths'
+  const acceptCsv = [
+    header,
+    'T1,导出服务,REQ-07,,32,,150,src/export/',
+    'T2,回归测试,REQ-07,T1,12,,100,test/',
+  ].join('\n')
+  const reduceCsv = [
+    header,
+    'T1,仅记录事件,REQ-07,,22,,150,src/export/',
+    'T2,回归测试,REQ-07,T1,10,,100,test/',
+  ].join('\n')
+  const result = buildScenarios(base, 1, {
+    basePlanVersion: 1,
+    acceptTasksCsv: acceptCsv,
+    reduceTasksCsv: reduceCsv,
+    deferTasksCsv: acceptCsv,
+  })
+  assert.equal(result.scenarios.length, 3)
+  assert.deepEqual(result.scenarios.map((item) => item.kind), ['accept', 'reduce', 'defer'])
+  assert.equal(result.scenarios[0].delta.effortHours, -28)
+  assert.equal(result.scenarios[1].delta.effortHours, -40)
+  assert.equal(result.scenarios[2].delta.effortHours, 0)
+  assert.equal(result.scenarios[2].futurePlan?.metrics.effortHours, 44)
 })
