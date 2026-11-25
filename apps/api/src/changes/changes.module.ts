@@ -1,421 +1,325 @@
 import {
-  BadGatewayException,
-  BadRequestException,
   Body,
-  ConflictException,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Inject,
   Module,
-  NotFoundException,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
 } from '@nestjs/common'
 import type {
-  AiChangeCandidate,
-  AiImpactVerdict,
-  AiNewRequirement,
-  AiUpstreamImpact,
-  ChangeAnalysis,
-  ChangeAnalysisInput,
-  ChangeAnalysisResult,
-  ChangeAnalysisSummary,
+  AnalysisRevision,
+  ChangeRequest,
+  ChangeSubmission,
+  CreateChangeRequestInput,
+  DecideInput,
+  ApprovalResult,
+  ApprovalDecision,
+  ScenarioRevision,
+  ScenarioInputSet,
+  UpdateChangeRequestInput,
 } from '@archguard/contracts'
-import { analyzeChange } from './analyze-change'
-import { LlmGateway, LlmModule, OpenAiCompatibleProvider } from '../llm/llm.module'
+import type { AnalysisAdapter, AnalysisContext, ScenarioAdapter } from './adapters'
+import { ANALYSIS_ADAPTER, NotConnectedAnalysisAdapter, NotConnectedScenarioAdapter, SCENARIO_ADAPTER } from './adapters'
+import { ActorResolver } from './actor'
+import { createFixtureAdapters } from './fixture-adapters'
+import { fail, toHttpException } from './errors'
 import { SqliteStore } from '../storage/sqlite-store'
 import { StorageModule } from '../storage/storage.module'
+import { ChangeAnalysesController } from './change-analyses.controller'
+import { LlmModule, OpenAiCompatibleProvider } from '../llm/llm.module'
 
-function parseInput(body: unknown): ChangeAnalysisInput {
-  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
-    throw new BadRequestException('请输入变更描述、扫描 ID 和计划版本。')
-  }
-  const input = body as Record<string, unknown>
-  if (typeof input.description !== 'string' || input.description.trim().length < 1 ||
-      input.description.length > 10_000 || typeof input.scanId !== 'string' ||
-      typeof input.planVersion !== 'number' || !Number.isSafeInteger(input.planVersion) || input.planVersion < 1) {
-    throw new BadRequestException('变更描述须为 1 到 10,000 个字符，并指定有效扫描 ID 和计划版本。')
-  }
-  return { description: input.description.trim(), scanId: input.scanId, planVersion: input.planVersion }
-}
+export { parseAiReview } from './change-analyses.controller'
 
-function parseConfirmedTaskIds(body: unknown): string[] {
-  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
-    throw new BadRequestException('请提交有效的 confirmedTaskIds 列表。')
-  }
-  const rawIds = (body as Record<string, unknown>).confirmedTaskIds
-  if (!Array.isArray(rawIds) || rawIds.length > 1000) {
-    throw new BadRequestException('请提交有效的 confirmedTaskIds 列表。')
-  }
-  const values: unknown[] = rawIds
-  const ids: string[] = []
-  for (const value of values) {
-    if (typeof value !== 'string' || value.length > 80) {
-      throw new BadRequestException('确认任务编号格式无效。')
-    }
-    ids.push(value)
-  }
-  if (ids.length !== new Set(ids).size) throw new BadRequestException('确认任务列表不能包含重复编号。')
-  return ids
-}
 
-function parseJsonOutput(output: string): unknown {
-  const trimmed = output.trim()
-  const fence = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(trimmed)
-  const source = (fence?.[1] ?? trimmed).trim()
-  try {
-    return JSON.parse(source)
-  } catch {
-    const start = source.indexOf('{')
-    if (start < 0) throw new BadGatewayException('LLM 输出不是有效 JSON，未保存候选结果。')
-    let depth = 0
-    let inString = false
-    let escaped = false
-    for (let index = start; index < source.length; index++) {
-      const character = source[index]
-      if (inString) {
-        if (escaped) escaped = false
-        else if (character === '\\') escaped = true
-        else if (character === '"') inString = false
-      } else if (character === '"') inString = true
-      else if (character === '{') depth++
-      else if (character === '}') {
-        depth--
-        if (depth === 0) {
-          try {
-            return JSON.parse(source.slice(start, index + 1))
-          } catch {
-            throw new BadGatewayException('LLM 输出不是有效 JSON，未保存候选结果。')
-          }
-        }
-      }
-    }
-    throw new BadGatewayException('LLM 输出不是有效 JSON，未保存候选结果。')
+function parseCreate(body: unknown): CreateChangeRequestInput {
+  const input = body as Partial<CreateChangeRequestInput> | null
+  if (typeof input?.title !== 'string' || typeof input.description !== 'string') {
+    fail('VALIDATION_ERROR', 400, '请提供变更标题和描述。')
   }
-}
-
-interface AiReviewOutput {
-  candidates?: unknown[]
-  upstreamTasks?: unknown[]
-  newRequirements?: unknown[]
-}
-
-function isVerdict(value: unknown): value is AiImpactVerdict {
-  return value === 'affected' || value === 'uncertain' || value === 'unaffected'
-}
-
-function readAiAssessments(
-  input: unknown,
-  allowedIds: Set<string>,
-  label: string,
-  warnings: string[],
-): Map<string, { verdict: AiImpactVerdict; rationale: string }> {
-  const assessments = new Map<string, { verdict: AiImpactVerdict; rationale: string }>()
-  if (!Array.isArray(input)) {
-    warnings.push(`AI 未返回有效的${label}列表。`)
-    return assessments
-  }
-  const items: unknown[] = input
-  for (const item of items) {
-    if (typeof item !== 'object' || item === null || !('taskId' in item) ||
-        typeof item.taskId !== 'string' || !('verdict' in item) || !isVerdict(item.verdict) ||
-        !('rationale' in item) || typeof item.rationale !== 'string') {
-      warnings.push(`忽略了一条格式无效的${label}判断。`)
-      continue
-    }
-    if (!allowedIds.has(item.taskId)) {
-      warnings.push(`忽略了不在本次${label}范围内的任务 ${item.taskId}。`)
-      continue
-    }
-    if (assessments.has(item.taskId)) {
-      warnings.push(`忽略了重复的${label}判断 ${item.taskId}。`)
-      continue
-    }
-    const rationale = item.rationale.trim()
-    if (!rationale || rationale.length > 500) {
-      warnings.push(`忽略了任务 ${item.taskId} 的空解释或超长解释。`)
-      continue
-    }
-    assessments.set(item.taskId, { verdict: item.verdict, rationale })
-  }
-  return assessments
-}
-
-export function parseAiReview(
-  output: string,
-  result: ChangeAnalysisResult,
-  inventoryComplete: boolean,
-): ChangeAnalysisResult {
-  const payload = parseJsonOutput(output)
-  if (typeof payload !== 'object' || payload === null || !('candidates' in payload) ||
-      !Array.isArray(payload.candidates)) {
-    throw new BadGatewayException('LLM 输出缺少有效的复核结果，未保存 AI 分析。')
-  }
-  const warnings: string[] = []
-  const review = payload as AiReviewOutput
-  const candidateIds = new Set(result.candidates.map(({ taskId }) => taskId))
-  const upstreamTasks = result.upstreamTasks ?? []
-  const upstreamIds = new Set(upstreamTasks.map(({ taskId }) => taskId))
-  const candidateReviews = readAiAssessments(review.candidates, candidateIds, '程序候选', warnings)
-  const upstreamReviews = readAiAssessments(review.upstreamTasks, upstreamIds, '前置任务', warnings)
-  const candidates: AiChangeCandidate[] = result.candidates.map((candidate) => {
-    const assessment = candidateReviews.get(candidate.taskId)
-    if (!assessment) warnings.push(`AI 未明确判断 ${candidate.taskId}；该程序候选仍保留，请人工复核。`)
-    return {
-      ...candidate,
-      verdict: assessment?.verdict ?? 'uncertain',
-      rationale: assessment?.rationale ?? 'AI 未明确判断；程序识别的依赖仍保留，请人工复核。',
-    }
-  })
-  const upstreamImpacts: AiUpstreamImpact[] = upstreamTasks.map((task) => {
-    const assessment = upstreamReviews.get(task.taskId)
-    if (!assessment) warnings.push(`AI 未明确判断前置任务 ${task.taskId}；该路径仍保留，请人工复核。`)
-    return {
-      ...task,
-      verdict: assessment?.verdict ?? 'uncertain',
-      rationale: assessment?.rationale ?? 'AI 未明确判断该前置任务；请人工核对其交付物和接口假设。',
-    }
-  })
-
-  const newRequirements: AiNewRequirement[] = []
-  if (review.newRequirements !== undefined && !Array.isArray(review.newRequirements)) {
-    warnings.push('AI 返回的新需求列表格式无效，已忽略。')
-  } else if (Array.isArray(review.newRequirements)) {
-    const items: unknown[] = review.newRequirements
-    if (!inventoryComplete && items.length) {
-      warnings.push('项目映射资料不完整，无法确认新需求是否独立；AI 新路径建议未采纳。')
-    } else {
-      for (const item of items.slice(0, 10)) {
-        if (typeof item !== 'object' || item === null || !('independent' in item) || item.independent !== true ||
-            !('title' in item) || typeof item.title !== 'string' ||
-            !('description' in item) || typeof item.description !== 'string' ||
-            !('rationale' in item) || typeof item.rationale !== 'string') {
-          warnings.push('忽略了一条未明确声明独立或字段不完整的新路径建议。')
-          continue
-        }
-        const title = item.title.trim()
-        const description = item.description.trim()
-        const rationale = item.rationale.trim()
-        if (!title || title.length > 160 || !description || description.length > 1000 ||
-            !rationale || rationale.length > 500) {
-          warnings.push('忽略了一条标题/描述为空或超长的新路径建议。')
-          continue
-        }
-        const index = newRequirements.length
-        newRequirements.push({
-          id: `New${index}`,
-          title,
-          description,
-          rationale,
-          startingPoint: true,
-          requiresArchitectureReview: true,
-        })
-      }
-      if (items.length > 10) warnings.push('新路径建议超过 10 项，仅保留前 10 项。')
-    }
+  if (typeof input.basePlanVersion !== 'number' || typeof input.baseScanId !== 'string') {
+    fail('VALIDATION_ERROR', 400, '请提供基线计划版本和基线扫描 ID。')
   }
   return {
-    ...result,
-    aiCandidates: candidates,
-    aiUpstreamImpacts: upstreamImpacts,
-    newRequirements,
-    aiWarnings: warnings,
+    title: input.title,
+    description: input.description,
+    basePlanVersion: input.basePlanVersion,
+    baseScanId: input.baseScanId,
   }
 }
 
-@Controller('projects/:projectId/change-analyses')
-class ChangeAnalysesController {
+function parseUpdate(body: unknown): UpdateChangeRequestInput {
+  const input = body as Partial<UpdateChangeRequestInput> | null
+  if (input?.expectedRevision !== undefined && !Number.isInteger(input.expectedRevision)) {
+    fail('VALIDATION_ERROR', 400, 'expectedRevision 必须为整数。')
+  }
+  return {
+    title: input?.title,
+    description: input?.description,
+    basePlanVersion: input?.basePlanVersion,
+    baseScanId: input?.baseScanId,
+    expectedRevision: input?.expectedRevision as number,
+  }
+}
+
+function parseDecide(body: unknown): DecideInput {
+  const input = body as Partial<DecideInput> | null
+  if (typeof input?.idempotencyKey !== 'string') fail('VALIDATION_ERROR', 400, '请提供 idempotencyKey。')
+  if (input.decision !== 'approved' && input.decision !== 'rejected') {
+    fail('VALIDATION_ERROR', 400, 'decision 必须为 approved 或 rejected。')
+  }
+  if (typeof input.submissionId !== 'string' || !input.submissionId.trim()) {
+    fail('VALIDATION_ERROR', 400, '请提供 submissionId。')
+  }
+  if (typeof input.expectedSnapshotHash !== 'string' || !/^[a-f0-9]{64}$/.test(input.expectedSnapshotHash)) {
+    fail('VALIDATION_ERROR', 400, '请提供 64 位十六进制 expectedSnapshotHash。')
+  }
+  return {
+    decision: input.decision,
+    comment: typeof input.comment === 'string' ? input.comment : undefined,
+    idempotencyKey: input.idempotencyKey,
+    submissionId: input.submissionId,
+    expectedSnapshotHash: input.expectedSnapshotHash,
+  }
+}
+
+const scenarioKinds = ['accept', 'reduce', 'defer'] as const
+const scenarioInputKeys = ['kind', 'includedScope', 'excludedScope', 'acceptanceCriteria', 'taskDiffs', 'estimationInput']
+
+function parseScenarioInputSet(body: unknown): ScenarioInputSet {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    fail('VALIDATION_ERROR', 400, '请提供 accept、reduce、defer 三个方案的输入。')
+  }
+  const input = body as Record<string, unknown>
+  const forbidden = Object.keys(input).filter((key) => !scenarioKinds.includes(key as (typeof scenarioKinds)[number]))
+  if (forbidden.length) fail('VALIDATION_ERROR', 400, `不接受直接提交这些字段：${forbidden.join('、')}。metrics 和 candidatePlan 由服务端计算。`)
+  const result = {} as Record<(typeof scenarioKinds)[number], unknown>
+  for (const kind of scenarioKinds) {
+    const scheme = input[kind]
+    if (typeof scheme !== 'object' || scheme === null || Array.isArray(scheme)) {
+      fail('VALIDATION_ERROR', 400, `${kind} 方案输入无效。`)
+    }
+    const keys = Object.keys(scheme)
+    const extra = keys.filter((key) => !scenarioInputKeys.includes(key))
+    if (extra.length) fail('VALIDATION_ERROR', 400, `${kind} 方案不接受字段：${extra.join('、')}。`)
+    const typed = scheme as Record<string, unknown>
+    if (typed.kind !== kind) fail('VALIDATION_ERROR', 400, `${kind} 方案的 kind 字段必须为 ${kind}。`)
+    result[kind] = typed
+  }
+  return result as unknown as ScenarioInputSet
+}
+
+@Controller('projects/:projectId/change-requests')
+export class ChangesController {
   constructor(
     @Inject(SqliteStore) private readonly store: SqliteStore,
-    @Inject(LlmGateway) private readonly llm: LlmGateway,
-    @Inject(OpenAiCompatibleProvider) private readonly provider: OpenAiCompatibleProvider,
+    @Inject(ActorResolver) private readonly actors: ActorResolver,
+    @Inject(ANALYSIS_ADAPTER) private readonly analysisAdapter: AnalysisAdapter,
+    @Inject(SCENARIO_ADAPTER) private readonly scenarioAdapter: ScenarioAdapter,
   ) {}
 
-  private requireProject(projectId: string): void {
-    if (!this.store.hasProject(projectId)) throw new NotFoundException('找不到该项目。')
+  private run<T>(callback: () => T): T {
+    try {
+      return callback()
+    } catch (error) {
+      throw toHttpException(error)
+    }
   }
 
-  @Get()
-  list(@Param('projectId', ParseUUIDPipe) projectId: string): ChangeAnalysisSummary[] {
-    this.requireProject(projectId)
-    return this.store.listChangeAnalyses(projectId)
+  private analysisContext(projectId: string, changeRequest: ChangeRequest, actorHeader: string | undefined): AnalysisContext {
+    const member = this.store.authorizeMember(this.actors.resolve(actorHeader), projectId)
+    return {
+      projectId,
+      changeRequest,
+      baselinePlan: this.store.getPlan(projectId, changeRequest.basePlanVersion) ?? undefined,
+      baselineScan: this.store.getScan(projectId, changeRequest.baseScanId),
+      actor: member,
+    }
   }
 
   @Post()
-  @HttpCode(HttpStatus.ACCEPTED)
-  enqueue(@Param('projectId', ParseUUIDPipe) projectId: string, @Body() body: unknown): ChangeAnalysis {
-    this.requireProject(projectId)
-    const input = parseInput(body)
-    const scan = this.store.getScan(projectId, input.scanId)
-    if (!scan) throw new NotFoundException('找不到该项目的扫描记录。')
-    if (scan.status !== 'succeeded' || !scan.result) throw new ConflictException('请选择已完成的仓库扫描。')
-    if (!this.store.getPlan(projectId, input.planVersion)) throw new NotFoundException('找不到该计划版本。')
-    return this.store.enqueueChangeAnalysis(projectId, input)
+  @HttpCode(HttpStatus.CREATED)
+  create(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Headers('authorization') authorization: string | undefined,
+    @Body() body: unknown,
+  ): ChangeRequest {
+    return this.run(() => this.store.createChangeRequest(projectId, this.actors.resolve(authorization), parseCreate(body)))
   }
 
-  @Get(':analysisId')
+  @Get()
+  list(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Headers('authorization') authorization: string | undefined,
+  ): ChangeRequest[] {
+    return this.run(() => {
+      this.store.authorizeMember(this.actors.resolve(authorization), projectId)
+      return this.store.listChangeRequests(projectId)
+    })
+  }
+
+  @Get(':changeId')
   detail(
     @Param('projectId', ParseUUIDPipe) projectId: string,
-    @Param('analysisId', ParseUUIDPipe) analysisId: string,
-  ): ChangeAnalysis {
-    this.requireProject(projectId)
-    const analysis = this.store.getChangeAnalysis(projectId, analysisId)
-    if (!analysis) throw new NotFoundException('找不到该变更分析。')
-    return analysis
-  }
-
-  @Post(':analysisId/confirm')
-  confirm(
-    @Param('projectId', ParseUUIDPipe) projectId: string,
-    @Param('analysisId', ParseUUIDPipe) analysisId: string,
-    @Body() body: unknown,
-  ): ChangeAnalysis {
-    const analysis = this.detail(projectId, analysisId)
-    if (!analysis.result) throw new ConflictException('分析尚未完成，无法确认影响任务。')
-    const ids = parseConfirmedTaskIds(body)
-    const allowedIds = new Set([
-      ...analysis.result.candidates.map(({ taskId }) => taskId),
-      ...(analysis.result.upstreamTasks ?? []).map(({ taskId }) => taskId),
-    ])
-    if (ids.some((id) => !allowedIds.has(id))) {
-      throw new BadRequestException('确认列表包含本次影响路径中不存在的任务。')
-    }
-    const result = { ...analysis.result, confirmedTaskIds: ids }
-    const updated = this.store.updateChangeAnalysisResult(analysisId, result)
-    if (!updated) throw new ConflictException('变更分析状态已改变，请刷新后重试。')
-    return updated
-  }
-
-  @Post(':analysisId/ai-candidates')
-  async extractAiCandidates(
-    @Param('projectId', ParseUUIDPipe) projectId: string,
-    @Param('analysisId', ParseUUIDPipe) analysisId: string,
-  ): Promise<ChangeAnalysis> {
-    const analysis = this.detail(projectId, analysisId)
-    if (!analysis.result) throw new ConflictException('分析尚未完成，无法提取 AI 候选。')
-    if (!this.llm.status().configured) throw new ConflictException('请先配置 LLM API Key。')
-    const scan = this.store.getScan(projectId, analysis.scanId)
-    const plan = this.store.getPlan(projectId, analysis.planVersion)
-    if (!scan?.result || scan.status !== 'succeeded' || !plan) {
-      throw new ConflictException('分析所引用的扫描或计划已不可用，请重新分析。')
-    }
-    const previousConfirmed = new Set(analysis.result.confirmedTaskIds)
-    const result = analyzeChange(
-      { description: analysis.description, scanId: analysis.scanId, planVersion: analysis.planVersion },
-      scan.result,
-      plan,
-    )
-    result.confirmedTaskIds = [...previousConfirmed].filter((id) =>
-      result.candidates.some((candidate) => candidate.taskId === id) ||
-      result.upstreamTasks?.some((task) => task.taskId === id))
-
-    const evidence = new Map(result.evidence.map((item) => [item.id, item]))
-    const candidates = result.candidates.map((candidate) => ({
-      taskId: candidate.taskId,
-      title: candidate.title,
-      impactType: candidate.classification,
-      impactPath: candidate.path,
-      evidence: candidate.evidenceIds.map((id) => evidence.get(id)).filter(Boolean),
-    }))
-    const upstreamTasks = (result.upstreamTasks ?? []).map((task) => ({
-      taskId: task.taskId,
-      title: task.title,
-      requirementIds: task.requirementIds,
-      modulePaths: task.modulePaths,
-      path: task.path,
-      evidence: task.evidenceIds.map((id) => evidence.get(id)).filter(Boolean),
-    }))
-    const fullInventory = {
-      requirements: plan.requirements,
-      tasks: plan.tasks.map((task) => ({
-        id: task.id,
-        title: task.title,
-        requirementIds: task.requirementIds,
-        predecessorIds: task.predecessorIds,
-        modulePaths: task.modulePaths,
-      })),
-      codeModules: scan.result.files,
-      codeDependencies: scan.result.dependencies.map(({ from, to, kind }) => ({ from, to, kind })),
-    }
-    let inventoryComplete = true
-    let inventory: unknown = fullInventory
-    const fullPrompt = {
-      changeRequest: analysis.description,
-      selectedDependencies: candidates,
-      upstreamTasks,
-      projectInventory: fullInventory,
-      inventoryComplete: true,
-    }
-    if (JSON.stringify(fullPrompt).length > 80_000) {
-      inventoryComplete = false
-      const relevantIds = new Set([
-        ...result.candidates.map(({ taskId }) => taskId),
-        ...(result.upstreamTasks ?? []).map(({ taskId }) => taskId),
-      ])
-      const relevantRequirementIds = new Set(
-        plan.tasks.filter((task) => relevantIds.has(task.id)).flatMap((task) => task.requirementIds),
-      )
-      inventory = {
-        requirements: plan.requirements.filter((item) => relevantRequirementIds.has(item.id)),
-        tasks: plan.tasks.filter((task) => relevantIds.has(task.id)).map((task) => ({
-          id: task.id,
-          title: task.title,
-          requirementIds: task.requirementIds,
-          predecessorIds: task.predecessorIds,
-          modulePaths: task.modulePaths,
-        })),
-        codeModules: result.affectedFiles.map(({ file }) => file),
-      }
-    }
-    const userContent = JSON.stringify({
-      changeRequest: analysis.description,
-      selectedDependencies: candidates,
-      upstreamTasks,
-      projectInventory: inventory,
-      inventoryComplete,
+    @Param('changeId', ParseUUIDPipe) changeId: string,
+    @Headers('authorization') authorization: string | undefined,
+  ): ChangeRequest {
+    return this.run(() => {
+      this.store.authorizeMember(this.actors.resolve(authorization), projectId)
+      const row = this.store.getChangeRequest(projectId, changeId)
+      if (!row) fail('NOT_FOUND', 404, '找不到该变更申请。')
+      return row
     })
-    if (userContent.length > 100_000) {
-      throw new ConflictException('本次影响路径上下文过大，暂时无法安全提交给 AI；请缩小分析范围。')
-    }
-    let output: string
-    try {
-      output = await this.llm.complete(this.provider, {
-        messages: [
-          {
-            role: 'system',
-            content: [
-              '你是软件项目需求变更影响复核助手。程序已经计算出 selectedDependencies，不能删除或改写其中任何任务、路径或分类。你负责判断每条程序依赖是否确实受本次变更影响，并说明理由。',
-              '对 selectedDependencies 中的每个 taskId 都必须返回一条 candidates 结果：verdict 只能是 affected（有依据认为受影响）、unaffected（有依据认为不受影响）或 uncertain（上下文不足，需要人工核对）。即使 verdict 为 unaffected，也必须保留该任务和具体理由。',
-              '再检查 upstreamTasks：它们是从受影响路径向前追溯的任务前置项。仅仅是前置任务不代表要返工；只有当变更破坏其交付的接口、数据结构、前置假设或验收条件时，才判断 affected。对每个 upstreamTasks.taskId 都返回 upstreamTasks 结果；不能创造不在输入中的任务。',
-              '如果变更描述包含一个新的功能/需求，并且完整 projectInventory 表明它不属于已有需求、任务、模块或代码依赖，才将它作为独立新路径建议。只在 inventoryComplete=true 时允许提出；否则 newRequirements 必须为空。不要为普通的任务遗漏或未知信息编造 New0。',
-              '新路径建议是待人工确认的需求草案，不得声称已写入计划；服务端会为建议分配 New0、New1 等编号，并标记需要人工设计架构。',
-              '只基于输入事实推理，不得生成工时、日期、价格、代码路径或证据编号。理由要针对具体任务，不要把相同套话复制给多项。',
-              '只返回 JSON，不要 Markdown 或额外文字。格式：{"candidates":[{"taskId":"T5","verdict":"affected|unaffected|uncertain","rationale":"具体理由"}],"upstreamTasks":[{"taskId":"T2","verdict":"affected|unaffected|uncertain","rationale":"说明前置交付是否需返工"}],"newRequirements":[{"independent":true,"title":"功能名","description":"需求草案","rationale":"为何与现有需求和路径独立"}]}。若没有前置影响或新增需求，返回空数组。',
-            ].join('\n'),
-          },
-          {
-            role: 'user',
-            content: userContent,
-          },
-        ],
-      })
-    } catch (error) {
-      throw new BadGatewayException(error instanceof Error ? error.message : 'AI 影响复核失败。')
-    }
-    if (output.length > 50_000) throw new BadGatewayException('LLM 复核输出超过 50,000 字符，未保存结果。')
-    const reviewed = parseAiReview(output, result, inventoryComplete)
-    const updated = this.store.updateChangeAnalysisResult(analysisId, reviewed)
-    if (!updated) throw new ConflictException('变更分析状态已改变，请刷新后重试。')
-    return updated
+  }
+
+  @Patch(':changeId')
+  update(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('changeId', ParseUUIDPipe) changeId: string,
+    @Headers('authorization') authorization: string | undefined,
+    @Body() body: unknown,
+  ): ChangeRequest {
+    return this.run(() => this.store.updateChangeRequest(projectId, changeId, this.actors.resolve(authorization), parseUpdate(body)))
+  }
+
+  @Post(':changeId/analyses')
+  @HttpCode(HttpStatus.CREATED)
+  addAnalysis(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('changeId', ParseUUIDPipe) changeId: string,
+    @Headers('authorization') authorization: string | undefined,
+    @Body() body: unknown,
+  ): AnalysisRevision {
+    return this.run(() => {
+      const changeRequest = this.store.getChangeRequest(projectId, changeId)
+      if (!changeRequest) fail('NOT_FOUND', 404, '找不到该变更申请。')
+      const context = this.analysisContext(projectId, changeRequest, authorization)
+      const draft = this.analysisAdapter.analyze(context, body)
+      return this.store.saveAnalysisRevision(projectId, changeId, context.actor, draft)
+    })
+  }
+
+  @Get(':changeId/analyses')
+  listAnalyses(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('changeId', ParseUUIDPipe) changeId: string,
+    @Headers('authorization') authorization: string | undefined,
+  ): AnalysisRevision[] {
+    return this.run(() => {
+      this.store.authorizeMember(this.actors.resolve(authorization), projectId)
+      return this.store.listAnalysisRevisions(projectId, changeId)
+    })
+  }
+
+  @Post(':changeId/scenarios')
+  @HttpCode(HttpStatus.CREATED)
+  addScenarios(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('changeId', ParseUUIDPipe) changeId: string,
+    @Headers('authorization') authorization: string | undefined,
+    @Body() body: unknown,
+  ): ScenarioRevision {
+    return this.run(() => {
+      const changeRequest = this.store.getChangeRequest(projectId, changeId)
+      if (!changeRequest) fail('NOT_FOUND', 404, '找不到该变更申请。')
+      const context = this.analysisContext(projectId, changeRequest, authorization)
+      const analysis = this.store.listAnalysisRevisions(projectId, changeId)[0]
+      if (!analysis) fail('STATE_CONFLICT', 409, '请先创建分析版本。')
+      const input = parseScenarioInputSet(body)
+      const draft = this.scenarioAdapter.compute({ ...context, analysis, existingScenarios: this.store.listScenarioRevisions(projectId, changeId) }, input)
+      return this.store.saveScenarioRevision(projectId, changeId, context.actor, draft)
+    })
+  }
+
+  @Get(':changeId/scenarios')
+  listScenarios(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('changeId', ParseUUIDPipe) changeId: string,
+    @Headers('authorization') authorization: string | undefined,
+  ): ScenarioRevision[] {
+    return this.run(() => {
+      this.store.authorizeMember(this.actors.resolve(authorization), projectId)
+      return this.store.listScenarioRevisions(projectId, changeId)
+    })
+  }
+
+  @Post(':changeId/submit')
+  @HttpCode(HttpStatus.OK)
+  submit(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('changeId', ParseUUIDPipe) changeId: string,
+    @Headers('authorization') authorization: string | undefined,
+    @Body() body: unknown,
+  ): ChangeSubmission {
+    return this.run(() => {
+      const input = body as { selectedKind?: unknown } | null
+      if (!input || (input.selectedKind !== 'accept' && input.selectedKind !== 'reduce' && input.selectedKind !== 'defer')) {
+        fail('VALIDATION_ERROR', 400, '请选择 accept、reduce 或 defer 方案。')
+      }
+      return this.store.submitChangeRequest(projectId, changeId, this.actors.resolve(authorization), input.selectedKind)
+    })
+  }
+
+  @Get(':changeId/submissions')
+  listSubmissions(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('changeId', ParseUUIDPipe) changeId: string,
+    @Headers('authorization') authorization: string | undefined,
+  ): ChangeSubmission[] {
+    return this.run(() => {
+      this.store.authorizeMember(this.actors.resolve(authorization), projectId)
+      return this.store.listSubmissions(projectId, changeId)
+    })
+  }
+
+  @Post(':changeId/decisions')
+  @HttpCode(HttpStatus.OK)
+  decide(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('changeId', ParseUUIDPipe) changeId: string,
+    @Headers('authorization') authorization: string | undefined,
+    @Body() body: unknown,
+  ): ApprovalResult {
+    return this.run(() => this.store.decideChangeRequest(projectId, changeId, this.actors.resolve(authorization), parseDecide(body)))
+  }
+
+  @Get(':changeId/decisions')
+  listDecisions(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('changeId', ParseUUIDPipe) changeId: string,
+    @Headers('authorization') authorization: string | undefined,
+  ): ApprovalDecision[] {
+    return this.run(() => {
+      this.store.authorizeMember(this.actors.resolve(authorization), projectId)
+      return this.store.listDecisions(projectId, changeId)
+    })
   }
 }
 
 @Module({
   imports: [StorageModule, LlmModule],
-  controllers: [ChangeAnalysesController],
-  providers: [OpenAiCompatibleProvider],
+  controllers: [ChangesController, ChangeAnalysesController],
+  providers: [
+    ActorResolver,
+    OpenAiCompatibleProvider,
+    {
+      provide: ANALYSIS_ADAPTER,
+      useFactory: () => process.env.ARCHGUARD_ENABLE_DEMO_FIXTURES === '1'
+        ? createFixtureAdapters().analysis
+        : new NotConnectedAnalysisAdapter(),
+    },
+    {
+      provide: SCENARIO_ADAPTER,
+      useFactory: () => process.env.ARCHGUARD_ENABLE_DEMO_FIXTURES === '1'
+        ? createFixtureAdapters().scenario
+        : new NotConnectedScenarioAdapter(),
+    },
+  ],
+  exports: [ActorResolver],
 })
 export class ChangesModule {}

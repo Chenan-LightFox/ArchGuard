@@ -7,6 +7,8 @@ import { StorageModule } from './storage/storage.module'
 import { PlansModule } from './plans/plans.module'
 import { LlmModule } from './llm/llm.module'
 import { ChangesModule } from './changes/changes.module'
+import { ImplementationModule } from './implementation/implementation.module'
+import { ReportsModule } from './reports/reports.module'
 
 @Controller('health')
 class HealthController {
@@ -20,7 +22,7 @@ class HealthController {
 }
 
 @Module({
-  imports: [StorageModule, ProjectsModule, ScansModule, PlansModule, LlmModule, ChangesModule],
+  imports: [StorageModule, ProjectsModule, ScansModule, PlansModule, LlmModule, ChangesModule, ImplementationModule, ReportsModule],
   controllers: [HealthController],
 })
 export class AppModule {}
