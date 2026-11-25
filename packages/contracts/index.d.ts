@@ -159,6 +159,106 @@ export interface LlmSettingsStatus {
   model: string
 }
 
+export type ChangeAnalysisStatus = 'queued' | 'running' | 'succeeded' | 'failed'
+
+export interface ChangeAnalysisInput {
+  description: string
+  scanId: string
+  planVersion: number
+}
+
+export interface ChangeEvidence {
+  id: string
+  kind: 'requirement' | 'task' | 'module' | 'dependency' | 'task-dependency'
+  description: string
+  path: string[]
+}
+
+export type AiImpactVerdict = 'affected' | 'uncertain' | 'unaffected'
+
+export interface ChangeTaskCandidate {
+  taskId: string
+  title: string
+  classification: 'change' | 'review' | 'schedule'
+  path: string[]
+  evidenceIds: string[]
+}
+
+export interface ChangeTaskImpact extends ChangeTaskCandidate {
+  classification: 'change' | 'review' | 'schedule'
+  path: string[]
+}
+
+export interface ChangeCodeImpact {
+  file: string
+  classification: 'mapped' | 'dependent'
+  path: string[]
+  evidenceIds: string[]
+}
+
+export interface AiChangeCandidate {
+  taskId: string
+  classification: 'change' | 'review' | 'schedule'
+  verdict?: AiImpactVerdict
+  rationale: string
+  evidenceIds: string[]
+}
+
+export interface ChangeUpstreamTask {
+  taskId: string
+  title: string
+  requirementIds: string[]
+  modulePaths: string[]
+  path: string[]
+  evidenceIds: string[]
+}
+
+export interface AiUpstreamImpact extends ChangeUpstreamTask {
+  verdict: AiImpactVerdict
+  rationale: string
+}
+
+export interface AiNewRequirement {
+  id: string
+  title: string
+  description: string
+  rationale: string
+  startingPoint: true
+  requiresArchitectureReview: true
+}
+
+export interface ChangeAnalysisResult {
+  matchedRequirementIds: string[]
+  coverageLimited: boolean
+  coverageWarnings: string[]
+  candidates: ChangeTaskCandidate[]
+  affectedTasks: ChangeTaskImpact[]
+  affectedFiles: ChangeCodeImpact[]
+  evidence: ChangeEvidence[]
+  aiCandidates: AiChangeCandidate[]
+  upstreamTasks?: ChangeUpstreamTask[]
+  aiUpstreamImpacts?: AiUpstreamImpact[]
+  newRequirements?: AiNewRequirement[]
+  aiWarnings?: string[]
+  confirmedTaskIds: string[]
+}
+
+export interface ChangeAnalysisSummary {
+  id: string
+  projectId: string
+  scanId: string
+  planVersion: number
+  status: ChangeAnalysisStatus
+  createdAt: string
+  finishedAt: string | null
+  description: string
+  error: string | null
+}
+
+export interface ChangeAnalysis extends ChangeAnalysisSummary {
+  result: ChangeAnalysisResult | null
+}
+
 export interface PlanScenarioInput {
   basePlanVersion: number
   acceptTasksCsv: string

@@ -6,6 +6,7 @@ import { SqliteStore } from './storage/sqlite-store'
 import { scanRepository } from './scans/git-snapshot'
 import { gitStartupError, resolveGitExecutable } from './scans/git-executable'
 import { detectArchitecture } from './architecture/rules'
+import { analyzeChange } from './changes/analyze-change'
 
 const runFile = promisify(execFile)
 const leaseMs = 30_000
@@ -16,7 +17,7 @@ async function runWorker(): Promise<void> {
   const stop = () => { stopping = true }
   process.on('SIGINT', stop)
   process.on('SIGTERM', stop)
-  console.info('ArchGuard 扫描进程已启动，等待仓库扫描或环境检查。')
+  console.info('ArchGuard Worker 已启动，等待扫描、环境检查或变更分析任务。')
 
   try {
     while (!stopping) {
@@ -25,7 +26,27 @@ async function runWorker(): Promise<void> {
       if (!job) {
         const scan = store.claimScan(new Date(now).toISOString(), new Date(now + 300_000).toISOString())
         if (!scan) {
-          await delay(500)
+          const change = store.claimChangeAnalysis(new Date(now).toISOString(), new Date(now + 300_000).toISOString())
+          if (!change) {
+            await delay(500)
+            continue
+          }
+          try {
+            const detail = store.getScan(change.projectId, change.scanId)
+            const plan = store.getPlan(change.projectId, change.planVersion)
+            if (!detail?.result || detail.status !== 'succeeded' || !plan) {
+              throw new Error('变更分析引用的扫描结果或计划版本已不可用。')
+            }
+            const result = analyzeChange(
+              { description: change.description, scanId: change.scanId, planVersion: change.planVersion },
+              detail.result,
+              plan,
+            )
+            store.finishChangeAnalysis(change.id, result, null)
+          } catch (error) {
+            const message = error instanceof Error ? error.message : '变更影响分析失败。'
+            store.finishChangeAnalysis(change.id, null, message)
+          }
           continue
         }
         try {

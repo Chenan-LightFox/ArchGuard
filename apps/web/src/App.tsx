@@ -145,11 +145,14 @@ export function App() {
               <button className="secondary" onClick={() => setSection('projects')}>返回项目工作区</button>
             </section>
           )
-        ) : section === 'llm' ? <LlmSettingsPage /> : section === 'changes' ? (
+        ) : section === 'changes' ? (
           active ? <ChangesPage key={active.id} project={active} /> : (
-            <section className="card"><button className="secondary" onClick={() => setSection('projects')}>返回项目工作区</button></section>
+            <section className="card">
+              <h2>先选择一个项目</h2>
+              <button className="secondary" onClick={() => setSection('projects')}>返回项目工作区</button>
+            </section>
           )
-        ) : (
+        ) : section === 'llm' ? <LlmSettingsPage /> : (
           <section className="card">
             <span className="status">待接入</span>
           </section>

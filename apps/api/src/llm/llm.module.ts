@@ -17,6 +17,50 @@ export interface LlmProvider {
 }
 
 @Injectable()
+export class OpenAiCompatibleProvider implements LlmProvider {
+  async complete(connection: Readonly<LlmConnection>, request: LlmRequest): Promise<string> {
+    const baseUrl = connection.baseUrl ||'https://open.bigmodel.cn/api/paas/v4' //'https://api.openai.com/v1'
+    let response: Response
+    try {
+      response = await fetch(`${baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${connection.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: connection.model || 'glm-4-flash',//'gpt-4o-mini',
+          messages: request.messages,
+          temperature: 0.01,
+        }),
+        signal: request.signal ?? AbortSignal.timeout(20_000),
+      })
+    } catch (error) {
+      if (request.signal?.aborted) throw error
+      throw new Error('无法连接配置的 LLM 服务。')
+    }
+    if (!response.ok) throw new Error(`LLM 服务返回 HTTP ${response.status}。`)
+    let payload: unknown
+    try {
+      payload = await response.json()
+    } catch {
+      throw new Error('LLM 服务返回了无效 JSON。')
+    }
+    if (typeof payload !== 'object' || payload === null || !('choices' in payload) ||
+        !Array.isArray(payload.choices)) {
+      throw new Error('LLM 服务响应缺少候选内容。')
+    }
+    const first = payload.choices[0]
+    if (typeof first !== 'object' || first === null || !('message' in first) ||
+        typeof first.message !== 'object' || first.message === null || !('content' in first.message) ||
+        typeof first.message.content !== 'string') {
+      throw new Error('LLM 服务返回的候选内容格式无效。')
+    }
+    return first.message.content
+  }
+}
+
+@Injectable()
 export class LlmGateway {
   private connection?: LlmConnection
 
